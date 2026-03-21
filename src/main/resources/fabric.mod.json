@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "unknownmod",
+  "version": "${version}",
+  "name": "Unknown Mod",
+  "description": "Social deduction mod with anonymous players and ghosts.",
+  "authors": ["Artem"],
+  "contact": {},
+  "license": "CC0-1.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.unknownmod.UnknownMod"
+    ]
+  },
+  "mixins": [
+    "unknownmod.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.5",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*",
+    "polymer-core": "*"
+  }
+}
