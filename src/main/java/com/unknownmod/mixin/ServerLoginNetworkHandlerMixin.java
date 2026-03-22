@@ -1,5 +1,7 @@
-package com.unknownmod.mixin;
+﻿package com.unknownmod.mixin;
 
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
@@ -29,26 +31,59 @@ public abstract class ServerLoginNetworkHandlerMixin {
         if (unknownmod$patched || profile == null) return;
 
         UnknownConfig config = ConfigManager.getConfig();
-        String nickname = config.anonymous.skin.nickname;
-        String texture = config.anonymous.skin.texture;
-        String signature = config.anonymous.skin.signature;
+        // Use configured anonymous display name, not skin nickname
+        String displayName = config.anonymous != null ? config.anonymous.name : null;
 
-        boolean hasNickname = nickname != null && !nickname.isEmpty();
-        boolean hasSkin = texture != null && !texture.isEmpty()
-                && signature != null && !signature.isEmpty();
+        UnknownConfig.SkinSettings skin = config.anonymous != null ? config.anonymous.skin : null;
 
-        if (!hasNickname && !hasSkin) return;
+        // Build textures property according to config; if not resolvable, keep player's original skin
+        Property texturesProp = null;
+        if (skin != null) {
+            String type = skin.type != null ? skin.type : "";
+            if ("texture".equalsIgnoreCase(type)) {
+                String texture = skin.texture;
+                String signature = skin.signature;
+                if (texture != null && !texture.isEmpty() && signature != null && !signature.isEmpty()) {
+                    texturesProp = new Property("textures", texture, signature);
+                }
+            } else if ("nickname".equalsIgnoreCase(type)) {
+                String nick = skin.nickname;
+                if (nick != null && !nick.isEmpty()) {
+                    // Resolve skin from nickname via Mojang session service
+                    texturesProp = com.unknownmod.util.SkinFetcher.fetchTexturesByNickname(nick);
+                }
+            }
+        }
 
-        String finalName = hasNickname ? nickname : profile.name();
+        // If nothing to change, exit early
+        boolean changeName = displayName != null && !displayName.isEmpty() && !displayName.equals(profile.name());
+        boolean changeSkin = texturesProp != null;
+        if (!changeName && !changeSkin) return;
+
+        String finalName = changeName ? displayName : profile.name();
         UUID finalUuid = profile.id();
-
         GameProfile newProfile = new GameProfile(finalUuid, finalName);
 
-        PropertyMap props = newProfile.properties();
-
-        if (hasSkin) {
-            props.put("textures", new Property("textures", texture, signature));
+        // Start with original properties (to avoid clearing skin -> Alex/Steve)
+        Multimap<String, Property> multimap = HashMultimap.create();
+        for (var entry : profile.getProperties().entries()) {
+            if (!"textures".equals(entry.getKey())) {
+                multimap.put(entry.getKey(), entry.getValue());
+            }
         }
+        if (texturesProp != null) {
+            multimap.put("textures", texturesProp);
+        } else {
+            // Keep original textures if we didn't resolve another
+            for (var entry : profile.getProperties().entries()) {
+                if ("textures".equals(entry.getKey())) {
+                    multimap.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        PropertyMap newProps = new PropertyMap(multimap);
+        ((GameProfileAccessor) (Object) newProfile).setProperties(newProps);
 
         this.profile = newProfile;
         this.unknownmod$patched = true;

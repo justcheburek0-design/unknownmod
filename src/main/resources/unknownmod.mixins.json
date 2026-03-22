@@ -5,14 +5,11 @@
   "refmap": "unknownmod-refmap.json",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "ServerLoginNetworkHandlerMixin"
-  ],
-  "accessors": [
+    "ServerLoginNetworkHandlerMixin",
     "PlayerEntityAccessor",
     "GameProfileAccessor"
   ],
-  "client": [
-  ],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }
