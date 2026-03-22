@@ -10,6 +10,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.world.GameMode;
 import com.unknownmod.state.GhostStateManager;
+import com.unknownmod.state.RevelationManager;
 
 public class PlayerDeathHandler {
     public static void register() {
@@ -26,6 +27,7 @@ public class PlayerDeathHandler {
                                 GhostStateManager state = GhostStateManager.getServerState(world.getServer());
                                 state.addGhost(victim.getUuid());
                                 victim.changeGameMode(GameMode.SPECTATOR);
+                                RevelationManager.eliminateReveal(world.getServer(), victim, killer.getName().getString());
                             }
                         }
                     }

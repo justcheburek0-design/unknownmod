@@ -1,4 +1,4 @@
-﻿package com.unknownmod.mixin;
+package com.unknownmod.mixin;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
@@ -7,6 +7,10 @@ import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
+import com.unknownmod.state.RevelationManager;
+import com.unknownmod.util.ProfileApplier;
+import com.unknownmod.util.SkinFetcher;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerLoginNetworkHandler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -15,31 +19,39 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.UUID;
-
 @Mixin(ServerLoginNetworkHandler.class)
 public abstract class ServerLoginNetworkHandlerMixin {
 
     @Shadow
     private GameProfile profile;
 
+    @Shadow
+    private MinecraftServer server;
+
     @Unique
     private boolean unknownmod$patched;
 
     @Inject(method = "tick", at = @At("HEAD"))
     private void unknownmod$patchProfile(CallbackInfo ci) {
-        if (unknownmod$patched || profile == null) return;
+        if (unknownmod$patched || profile == null) {
+            return;
+        }
+
+        ProfileApplier.rememberOriginalProfile(profile);
 
         UnknownConfig config = ConfigManager.getConfig();
-        // Use configured anonymous display name, not skin nickname
-        String displayName = config.anonymous != null ? config.anonymous.name : null;
+        boolean revealed = server != null && RevelationManager.isRevealed(server, profile.id());
+        if (revealed) {
+            unknownmod$patched = true;
+            return;
+        }
 
+        String displayName = config.anonymous != null ? config.anonymous.name : null;
         UnknownConfig.SkinSettings skin = config.anonymous != null ? config.anonymous.skin : null;
 
-        // Build textures property according to config; if not resolvable, keep player's original skin
         Property texturesProp = null;
         if (skin != null) {
-            String type = skin.type != null ? skin.type : "";
+            String type = skin.type == null ? "" : skin.type;
             if ("texture".equalsIgnoreCase(type)) {
                 String texture = skin.texture;
                 String signature = skin.signature;
@@ -49,33 +61,34 @@ public abstract class ServerLoginNetworkHandlerMixin {
             } else if ("nickname".equalsIgnoreCase(type)) {
                 String nick = skin.nickname;
                 if (nick != null && !nick.isEmpty()) {
-                    // Resolve skin from nickname via Mojang session service
-                    texturesProp = com.unknownmod.util.SkinFetcher.fetchTexturesByNickname(nick);
+                    SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(nick);
+                    if (data != null) {
+                        texturesProp = new Property("textures", data.value, data.signature);
+                    }
                 }
             }
         }
 
-        // If nothing to change, exit early
         boolean changeName = displayName != null && !displayName.isEmpty() && !displayName.equals(profile.name());
         boolean changeSkin = texturesProp != null;
-        if (!changeName && !changeSkin) return;
+        if (!changeName && !changeSkin) {
+            return;
+        }
 
         String finalName = changeName ? displayName : profile.name();
-        UUID finalUuid = profile.id();
-        GameProfile newProfile = new GameProfile(finalUuid, finalName);
+        GameProfile newProfile = new GameProfile(profile.id(), finalName);
 
-        // Start with original properties (to avoid clearing skin -> Alex/Steve)
         Multimap<String, Property> multimap = HashMultimap.create();
-        for (var entry : profile.getProperties().entries()) {
+        for (var entry : profile.properties().entries()) {
             if (!"textures".equals(entry.getKey())) {
                 multimap.put(entry.getKey(), entry.getValue());
             }
         }
+
         if (texturesProp != null) {
             multimap.put("textures", texturesProp);
         } else {
-            // Keep original textures if we didn't resolve another
-            for (var entry : profile.getProperties().entries()) {
+            for (var entry : profile.properties().entries()) {
                 if ("textures".equals(entry.getKey())) {
                     multimap.put(entry.getKey(), entry.getValue());
                 }

@@ -11,4 +11,7 @@ public interface GameProfileAccessor {
     @Mutable
     @Accessor("properties")
     void setProperties(PropertyMap properties);
+
+    @Accessor("properties")
+    PropertyMap getProperties();
 }
