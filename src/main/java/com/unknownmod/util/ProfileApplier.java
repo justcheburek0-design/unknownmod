@@ -11,8 +11,11 @@ import com.unknownmod.mixin.GameProfileAccessor;
 import com.unknownmod.mixin.PlayerEntityAccessor;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
+import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+
+import java.util.List;
 
 public final class ProfileApplier {
     private ProfileApplier() {
@@ -27,6 +30,8 @@ public final class ProfileApplier {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             applyCurrentProfile(server, player, config);
         }
+
+        syncPlayerList(server);
     }
 
     public static void applyCurrentProfile(MinecraftServer server, ServerPlayerEntity player, UnknownConfig config) {
@@ -41,7 +46,25 @@ public final class ProfileApplier {
     public static boolean applyOriginalProfile(ServerPlayerEntity player) {
         return IdentityStore.get(player.getUuid())
                 .map(profile -> {
-                    ((PlayerEntityAccessor) player).setGameProfile(profile);
+                    GameProfile originalProfile = profile;
+                    if (originalProfile.properties().get("textures").isEmpty()) {
+                        String nickname = originalProfile.name();
+                        if (nickname != null && !nickname.isBlank()) {
+                            SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(nickname);
+                            if (data != null && !data.value.isBlank() && !data.signature.isBlank()) {
+                                GameProfile refreshedProfile = new GameProfile(originalProfile.id(), originalProfile.name());
+                                Multimap<String, Property> multimap = HashMultimap.create();
+                                for (var entry : originalProfile.properties().entries()) {
+                                    multimap.put(entry.getKey(), entry.getValue());
+                                }
+                                multimap.put("textures", new Property("textures", data.value, data.signature));
+                                ((GameProfileAccessor) (Object) refreshedProfile).setProperties(new PropertyMap(multimap));
+                                originalProfile = refreshedProfile;
+                            }
+                        }
+                    }
+
+                    ((PlayerEntityAccessor) player).setGameProfile(originalProfile);
                     return true;
                 })
                 .orElse(false);
@@ -76,6 +99,15 @@ public final class ProfileApplier {
 
         ((GameProfileAccessor) (Object) newProfile).setProperties(new PropertyMap(multimap));
         ((PlayerEntityAccessor) player).setGameProfile(newProfile);
+    }
+
+    private static void syncPlayerList(MinecraftServer server) {
+        List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
+        if (players.isEmpty()) {
+            return;
+        }
+
+        server.getPlayerManager().sendToAll(PlayerListS2CPacket.entryFromPlayer(players));
     }
 
     private static Property resolveTextures(UnknownConfig config) {

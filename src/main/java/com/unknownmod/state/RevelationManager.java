@@ -216,12 +216,7 @@ public final class RevelationManager {
         long now = System.currentTimeMillis();
         state.setActiveReveal(target.getUuid(), target.getName().getString(), now + durationMillis(config));
         state.setNextRevealAtMillis(now + intervalMillis(config));
-
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (!player.getUuid().equals(target.getUuid())) {
-                ProfileApplier.applyAnonymousProfile(player, config);
-            }
-        }
+        ProfileApplier.refreshAllOnline(server);
 
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealTitle));
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealSubtitle, "player", target.getName().getString()));
