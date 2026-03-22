@@ -1,8 +1,10 @@
 package com.unknownmod;
 
+import com.unknownmod.command.UnknownCommand;
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.event.PlayerDeathHandler;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,5 +17,9 @@ public class UnknownMod implements ModInitializer {
         LOGGER.info("Unknown Mod is initializing!");
         ConfigManager.load();
         PlayerDeathHandler.register();
+        
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            UnknownCommand.register(dispatcher);
+        });
     }
 }
