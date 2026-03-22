@@ -4,6 +4,7 @@ import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
 import com.unknownmod.util.MessageFormatter;
 import com.unknownmod.util.ProfileApplier;
+import com.unknownmod.util.RevealGlowManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -43,14 +44,34 @@ public final class RevelationManager {
             return false;
         }
 
+        UUID revealedUuid = state.getRevealedPlayerUuid().orElse(null);
         String playerName = state.getRevealedPlayerName();
         state.clearActiveReveal();
         state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(ConfigManager.getConfig()));
         state.setWarningSent(false);
+        RevealGlowManager.clearReveal(server, revealedUuid, playerName);
         ProfileApplier.refreshAllOnline(server);
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelTitle));
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelSubtitle, "player", playerName));
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelChat, "player", playerName));
+        return true;
+    }
+
+    public static boolean clearRevealIfMatches(MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) {
+            return false;
+        }
+
+        RevelationStateManager state = RevelationStateManager.getServerState(server);
+        if (!state.getRevealedPlayerUuid().map(uuid::equals).orElse(false)) {
+            return false;
+        }
+
+        String playerName = state.getRevealedPlayerName();
+        state.clearActiveReveal();
+        state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(ConfigManager.getConfig()));
+        state.setWarningSent(false);
+        RevealGlowManager.clearReveal(server, uuid, playerName);
         return true;
     }
 
@@ -61,13 +82,15 @@ public final class RevelationManager {
             return false;
         }
 
+        String playerName = victim.getName().getString();
         state.clearActiveReveal();
         state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(config));
         state.setWarningSent(false);
+        RevealGlowManager.clearReveal(server, victim.getUuid(), playerName);
         ProfileApplier.refreshAllOnline(server);
         broadcast(server, MessageFormatter.format(
                 config.revelation.messages.eliminated,
-                "player", victim.getName().getString(),
+                "player", playerName,
                 "killer", killerName
         ));
         return true;
@@ -109,7 +132,10 @@ public final class RevelationManager {
         if (config.revelation == null || !config.revelation.enabled) {
             state.clearSchedule();
             if (state.hasActiveReveal()) {
+                UUID revealedUuid = state.getRevealedPlayerUuid().orElse(null);
+                String playerName = state.getRevealedPlayerName();
                 state.clearActiveReveal();
+                RevealGlowManager.clearReveal(server, revealedUuid, playerName);
                 ProfileApplier.refreshAllOnline(server);
             }
             return;
@@ -130,6 +156,8 @@ public final class RevelationManager {
         if ((tickCounter % 20L) != 0L) {
             return;
         }
+
+        RevealGlowManager.syncPlayerVisibility(server);
 
         UnknownConfig config = ConfigManager.getConfig();
         if (config.revelation == null || !config.revelation.enabled) {
@@ -216,6 +244,7 @@ public final class RevelationManager {
         long now = System.currentTimeMillis();
         state.setActiveReveal(target.getUuid(), target.getName().getString(), now + durationMillis(config));
         state.setNextRevealAtMillis(now + intervalMillis(config));
+        RevealGlowManager.syncActiveReveal(server);
         ProfileApplier.refreshAllOnline(server);
 
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealTitle));

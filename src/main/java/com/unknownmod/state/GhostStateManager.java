@@ -2,9 +2,12 @@ package com.unknownmod.state;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.unknownmod.util.ProfileApplier;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateType;
-import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.world.GameMode;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -47,6 +50,53 @@ public class GhostStateManager extends PersistentState {
     public void addGhost(UUID uuid) {
         ghosts.add(uuid);
         markDirty();
+    }
+
+    public boolean removeGhost(UUID uuid) {
+        boolean removed = ghosts.remove(uuid);
+        if (removed) {
+            markDirty();
+        }
+        return removed;
+    }
+
+    public static boolean makeGhost(MinecraftServer server, ServerPlayerEntity player) {
+        if (server == null || player == null) {
+            return false;
+        }
+
+        GhostStateManager state = getServerState(server);
+        state.addGhost(player.getUuid());
+        RevelationManager.clearRevealIfMatches(server, player.getUuid());
+        if (player.getGameMode() != GameMode.SPECTATOR) {
+            player.changeGameMode(GameMode.SPECTATOR);
+        }
+        ProfileApplier.refreshPlayer(server, player);
+        return true;
+    }
+
+    public static boolean restoreGhost(MinecraftServer server, ServerPlayerEntity player) {
+        if (server == null || player == null) {
+            return false;
+        }
+
+        GhostStateManager state = getServerState(server);
+        if (!state.removeGhost(player.getUuid())) {
+            return false;
+        }
+
+        RevelationManager.clearRevealIfMatches(server, player.getUuid());
+
+        GameMode restoreMode = player.interactionManager.getPreviousGameMode();
+        if (restoreMode == null || restoreMode == GameMode.SPECTATOR) {
+            restoreMode = GameMode.SURVIVAL;
+        }
+        if (player.getGameMode() != restoreMode) {
+            player.changeGameMode(restoreMode);
+        }
+
+        ProfileApplier.refreshPlayer(server, player);
+        return true;
     }
 
     public boolean isGhost(UUID uuid) {

@@ -26,6 +26,7 @@ public class UnknownConfig {
     @ConfigSerializable
     public static class MessagesSettings {
         public String eliminated = "<red>%player%</red> был убит игроком <red>%killer%</red> <white>и становится наблюдателем навсегда!</white>";
+        public String weaponEliminated = "<dark_red>☠</dark_red> <red>%player%</red> <white>выбыл из игры из-за <red>%killer%</red>!</white>";
         public String joined = "<yellow>%player%</yellow> вошёл в игру";
         public String left = "<yellow>%player%</yellow> покинул игру";
     }

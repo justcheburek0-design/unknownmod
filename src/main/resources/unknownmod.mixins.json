@@ -5,9 +5,13 @@
   "refmap": "unknownmod-refmap.json",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "PlayerManagerMixin",
+    "ServerPlayNetworkHandlerMixin",
     "ServerLoginNetworkHandlerMixin",
+    "ServerCommonNetworkHandlerMixin",
     "PlayerEntityAccessor",
-    "GameProfileAccessor"
+    "GameProfileAccessor",
+    "PlayerListS2CPacketAccessor"
   ],
   "client": [],
   "injectors": {

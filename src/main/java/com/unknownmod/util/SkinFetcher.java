@@ -9,9 +9,14 @@ import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService;
 import com.mojang.authlib.yggdrasil.response.NameAndId;
 
 import java.net.Proxy;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public final class SkinFetcher {
+    private static final ConcurrentMap<String, Optional<SkinData>> CACHE = new ConcurrentHashMap<>();
+
     private SkinFetcher() {}
 
     public static class SkinData {
@@ -25,11 +30,17 @@ public final class SkinFetcher {
     }
 
     public static SkinData fetchTexturesByNickname(String nickname) {
-        try {
-            if (nickname == null || nickname.isBlank()) {
-                return null;
-            }
+        if (nickname == null || nickname.isBlank()) {
+            return null;
+        }
 
+        String cacheKey = nickname.toLowerCase(Locale.ROOT);
+        Optional<SkinData> cached = CACHE.computeIfAbsent(cacheKey, key -> Optional.ofNullable(fetchTexturesByNicknameUncached(nickname)));
+        return cached.orElse(null);
+    }
+
+    private static SkinData fetchTexturesByNicknameUncached(String nickname) {
+        try {
             YggdrasilAuthenticationService authService = new YggdrasilAuthenticationService(Proxy.NO_PROXY);
             GameProfileRepository profileRepository = authService.createProfileRepository();
             Optional<NameAndId> profileOptional = profileRepository.findProfileByName(nickname);

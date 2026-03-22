@@ -5,6 +5,7 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
+import net.minecraft.text.PlainTextContent;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
 import net.minecraft.util.Formatting;
@@ -28,6 +29,26 @@ public final class MessageFormatter {
         Component component = deserializeComponent(resolved);
         String legacy = LEGACY_SECTION.serialize(component);
         return fromLegacySection(legacy);
+    }
+
+    public static Text formatWithTextPlaceholder(String template, String placeholderKey, Text placeholderValue, Object... placeholders) {
+        if (template == null || template.isBlank()) {
+            return Text.literal("");
+        }
+
+        if (placeholderKey == null || placeholderKey.isBlank() || placeholderValue == null) {
+            return format(template, placeholders);
+        }
+
+        String token = "%" + placeholderKey + "%";
+        if (!template.contains(token)) {
+            return format(template, placeholders);
+        }
+
+        String marker = "\u0000unknownmod:" + placeholderKey + "\u0000";
+        String resolved = template.replace(token, marker);
+        Text formatted = format(resolved, placeholders);
+        return replaceMarker(formatted, marker, placeholderValue);
     }
 
     private static String replacePlaceholders(String template, Object... placeholders) {
@@ -185,6 +206,46 @@ public final class MessageFormatter {
         segment.setStyle(state.toStyle());
         result.append(segment);
         buffer.setLength(0);
+    }
+
+    private static Text replaceMarker(Text text, String marker, Text replacement) {
+        MutableText result = Text.literal("");
+        result.setStyle(text.getStyle());
+        appendReplacedText(result, text, marker, replacement);
+        return result;
+    }
+
+    private static void appendReplacedText(MutableText result, Text text, String marker, Text replacement) {
+        if (text.getContent() instanceof PlainTextContent plainTextContent) {
+            appendPlainText(result, plainTextContent.string(), text.getStyle(), marker, replacement);
+        } else {
+            result.append(text.copyContentOnly().setStyle(text.getStyle()));
+        }
+
+        for (Text sibling : text.getSiblings()) {
+            result.append(replaceMarker(sibling, marker, replacement));
+        }
+    }
+
+    private static void appendPlainText(MutableText result, String string, Style style, String marker, Text replacement) {
+        int start = 0;
+        int markerIndex;
+        while ((markerIndex = string.indexOf(marker, start)) >= 0) {
+            if (markerIndex > start) {
+                MutableText segment = Text.literal(string.substring(start, markerIndex));
+                segment.setStyle(style);
+                result.append(segment);
+            }
+
+            result.append(replacement.copy());
+            start = markerIndex + marker.length();
+        }
+
+        if (start < string.length()) {
+            MutableText segment = Text.literal(string.substring(start));
+            segment.setStyle(style);
+            result.append(segment);
+        }
     }
 
     private static final class StyleState {

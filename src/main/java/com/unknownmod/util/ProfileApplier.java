@@ -9,13 +9,17 @@ import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
 import com.unknownmod.mixin.GameProfileAccessor;
 import com.unknownmod.mixin.PlayerEntityAccessor;
+import com.unknownmod.mixin.PlayerListS2CPacketAccessor;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 import java.util.List;
+import java.util.UUID;
 
 public final class ProfileApplier {
     private ProfileApplier() {
@@ -25,12 +29,111 @@ public final class ProfileApplier {
         IdentityStore.remember(profile);
     }
 
+    public static GameProfile getOriginalProfile(UUID uuid) {
+        return IdentityStore.get(uuid).map(ProfileApplier::enrichOriginalProfile).orElse(null);
+    }
+
+    public static String getDisplayName(MinecraftServer server, ServerPlayerEntity player) {
+        if (server == null || player == null) {
+            return "";
+        }
+
+        return getDisplayName(server, player.getUuid(), player.getName().getString());
+    }
+
+    public static String getDisplayName(MinecraftServer server, UUID uuid, String fallbackName) {
+        if (server != null && RevelationManager.isRevealed(server, uuid)) {
+            if (fallbackName != null && !fallbackName.isBlank()) {
+                return fallbackName;
+            }
+        }
+
+        UnknownConfig config = ConfigManager.getConfig();
+        if (config.anonymous != null && config.anonymous.name != null && !config.anonymous.name.isBlank()) {
+            return config.anonymous.name;
+        }
+
+        return fallbackName == null ? "" : fallbackName;
+    }
+
+    public static boolean personalizePlayerListPacket(MinecraftServer server, PlayerListS2CPacket packet, UUID viewerUuid) {
+        List<PlayerListS2CPacket.Entry> originalEntries = packet.getEntries();
+        List<PlayerListS2CPacket.Entry> patchedEntries = new java.util.ArrayList<>(originalEntries.size());
+        boolean changed = false;
+
+        for (PlayerListS2CPacket.Entry entry : originalEntries) {
+            Text displayName = entry.displayName();
+            if (server != null && RevelationManager.isRevealed(server, entry.profileId())) {
+                ServerPlayerEntity revealedPlayer = server.getPlayerManager().getPlayer(entry.profileId());
+                String revealedName = revealedPlayer != null ? revealedPlayer.getName().getString() : entry.profile().name();
+                if (revealedName != null && !revealedName.isBlank()) {
+                    displayName = Text.literal(revealedName).formatted(Formatting.RED);
+                    changed = true;
+                }
+            }
+
+            if (viewerUuid.equals(entry.profileId())) {
+                GameProfile originalProfile = getOriginalProfile(viewerUuid);
+                if (originalProfile != null) {
+                    patchedEntries.add(new PlayerListS2CPacket.Entry(
+                            entry.profileId(),
+                            originalProfile,
+                            entry.listed(),
+                            entry.latency(),
+                            entry.gameMode(),
+                            displayName,
+                            entry.showHat(),
+                            entry.listOrder(),
+                            entry.chatSession()
+                    ));
+                    changed = true;
+                    continue;
+                }
+            }
+
+            if (displayName != entry.displayName()) {
+                patchedEntries.add(new PlayerListS2CPacket.Entry(
+                        entry.profileId(),
+                        entry.profile(),
+                        entry.listed(),
+                        entry.latency(),
+                        entry.gameMode(),
+                        displayName,
+                        entry.showHat(),
+                        entry.listOrder(),
+                        entry.chatSession()
+                ));
+                changed = true;
+                continue;
+            }
+
+            patchedEntries.add(entry);
+        }
+
+        if (changed) {
+            ((PlayerListS2CPacketAccessor) (Object) packet).setEntries(patchedEntries);
+        }
+
+        return changed;
+    }
+
     public static void refreshAllOnline(MinecraftServer server) {
+        RevealGlowManager.syncActiveReveal(server);
         UnknownConfig config = ConfigManager.getConfig();
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             applyCurrentProfile(server, player, config);
         }
 
+        syncPlayerList(server);
+    }
+
+    public static void refreshPlayer(MinecraftServer server, ServerPlayerEntity player) {
+        if (server == null || player == null) {
+            return;
+        }
+
+        RevealGlowManager.syncActiveReveal(server);
+        applyCurrentProfile(server, player, ConfigManager.getConfig());
         syncPlayerList(server);
     }
 
@@ -44,30 +147,13 @@ public final class ProfileApplier {
     }
 
     public static boolean applyOriginalProfile(ServerPlayerEntity player) {
-        return IdentityStore.get(player.getUuid())
-                .map(profile -> {
-                    GameProfile originalProfile = profile;
-                    if (originalProfile.properties().get("textures").isEmpty()) {
-                        String nickname = originalProfile.name();
-                        if (nickname != null && !nickname.isBlank()) {
-                            SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(nickname);
-                            if (data != null && !data.value.isBlank() && !data.signature.isBlank()) {
-                                GameProfile refreshedProfile = new GameProfile(originalProfile.id(), originalProfile.name());
-                                Multimap<String, Property> multimap = HashMultimap.create();
-                                for (var entry : originalProfile.properties().entries()) {
-                                    multimap.put(entry.getKey(), entry.getValue());
-                                }
-                                multimap.put("textures", new Property("textures", data.value, data.signature));
-                                ((GameProfileAccessor) (Object) refreshedProfile).setProperties(new PropertyMap(multimap));
-                                originalProfile = refreshedProfile;
-                            }
-                        }
-                    }
+        GameProfile originalProfile = getOriginalProfile(player.getUuid());
+        if (originalProfile == null) {
+            return false;
+        }
 
-                    ((PlayerEntityAccessor) player).setGameProfile(originalProfile);
-                    return true;
-                })
-                .orElse(false);
+        ((PlayerEntityAccessor) player).setGameProfile(originalProfile);
+        return true;
     }
 
     public static void applyAnonymousProfile(ServerPlayerEntity player, UnknownConfig config) {
@@ -133,5 +219,34 @@ public final class ProfileApplier {
         }
 
         return null;
+    }
+
+    private static GameProfile enrichOriginalProfile(GameProfile originalProfile) {
+        if (originalProfile == null) {
+            return null;
+        }
+
+        if (!originalProfile.properties().get("textures").isEmpty()) {
+            return originalProfile;
+        }
+
+        String nickname = originalProfile.name();
+        if (nickname == null || nickname.isBlank()) {
+            return originalProfile;
+        }
+
+        SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(nickname);
+        if (data == null || data.value.isBlank() || data.signature.isBlank()) {
+            return originalProfile;
+        }
+
+        GameProfile refreshedProfile = new GameProfile(originalProfile.id(), originalProfile.name());
+        Multimap<String, Property> multimap = HashMultimap.create();
+        for (var entry : originalProfile.properties().entries()) {
+            multimap.put(entry.getKey(), entry.getValue());
+        }
+        multimap.put("textures", new Property("textures", data.value, data.signature));
+        ((GameProfileAccessor) (Object) refreshedProfile).setProperties(new PropertyMap(multimap));
+        return refreshedProfile;
     }
 }

@@ -4,14 +4,15 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
+import com.unknownmod.state.GhostStateManager;
+import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
 import com.unknownmod.util.MessageFormatter;
 import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.util.SkinFetcher;
-import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -27,6 +28,12 @@ public class UnknownCommand {
                 .then(CommandManager.literal("nickname")
                         .then(CommandManager.argument("value", StringArgumentType.string())
                                 .executes(UnknownCommand::executeSetNickname)
+                        )
+                )
+                .then(CommandManager.literal("ghost")
+                        .then(CommandManager.argument("target", StringArgumentType.word())
+                                .suggests(UnknownCommand::suggestKnownPlayerNames)
+                                .executes(UnknownCommand::executeGhostTarget)
                         )
                 )
                 .then(CommandManager.literal("skin")
@@ -48,10 +55,11 @@ public class UnknownCommand {
                 )
                 .then(CommandManager.literal("reveal")
                         .then(CommandManager.literal("player")
-                                .executes(UnknownCommand::executeRevealRandom)
-                                .then(CommandManager.argument("target", EntityArgumentType.player())
+                                .then(CommandManager.argument("target", StringArgumentType.word())
+                                        .suggests(UnknownCommand::suggestKnownPlayerNames)
                                         .executes(UnknownCommand::executeRevealTarget)
                                 )
+                                .executes(UnknownCommand::executeRevealRandom)
                         )
                         .then(CommandManager.literal("cancel")
                                 .executes(UnknownCommand::executeRevealCancel)
@@ -93,6 +101,31 @@ public class UnknownCommand {
         ConfigManager.save();
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Anonymous nickname set: " + value), false);
+        return 1;
+    }
+
+    private static int executeGhostTarget(CommandContext<ServerCommandSource> context) {
+        ServerPlayerEntity target = resolveTargetPlayer(context);
+        if (target == null) {
+            return 0;
+        }
+
+        if (GhostStateManager.getServerState(context.getSource().getServer()).isGhost(target.getUuid())) {
+            if (!GhostStateManager.restoreGhost(context.getSource().getServer(), target)) {
+                context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to restore player: " + target.getName().getString()));
+                return 0;
+            }
+
+            context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Player restored: " + target.getName().getString()), false);
+            return 1;
+        }
+
+        if (!GhostStateManager.makeGhost(context.getSource().getServer(), target)) {
+            context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to make player a ghost: " + target.getName().getString()));
+            return 0;
+        }
+
+        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Player made ghost: " + target.getName().getString()), false);
         return 1;
     }
 
@@ -142,13 +175,34 @@ public class UnknownCommand {
     }
 
     private static int executeRevealTarget(CommandContext<ServerCommandSource> context) {
-        try {
-            ServerPlayerEntity target = EntityArgumentType.getPlayer(context, "target");
-            return executeReveal(context, target);
-        } catch (CommandSyntaxException e) {
-            context.getSource().sendError(MessageFormatter.format("[UnknownMod] Target player not found."));
+        ServerPlayerEntity target = resolveTargetPlayer(context);
+        if (target == null) {
             return 0;
         }
+
+        return executeReveal(context, target);
+    }
+
+    private static ServerPlayerEntity resolveTargetPlayer(CommandContext<ServerCommandSource> context) {
+        String targetName = StringArgumentType.getString(context, "target");
+        ServerPlayerEntity target = IdentityStore.findOnlinePlayerByOriginalName(context.getSource().getServer(), targetName)
+                .orElse(null);
+        if (target != null) {
+            return target;
+        }
+
+        context.getSource().sendError(MessageFormatter.format("[UnknownMod] Player not found: " + targetName));
+        return null;
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestKnownPlayerNames(
+            CommandContext<ServerCommandSource> context,
+            SuggestionsBuilder builder
+    ) {
+        for (String name : IdentityStore.getKnownPlayerNames(context.getSource().getServer())) {
+            builder.suggest(name);
+        }
+        return builder.buildFuture();
     }
 
     private static int executeReveal(CommandContext<ServerCommandSource> context, ServerPlayerEntity target) {
