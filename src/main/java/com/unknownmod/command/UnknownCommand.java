@@ -7,6 +7,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
+import com.unknownmod.util.DebugMessenger;
 import com.unknownmod.state.GhostStateManager;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
@@ -15,6 +16,7 @@ import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.util.SkinFetcher;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 public class UnknownCommand {
@@ -24,6 +26,9 @@ public class UnknownCommand {
                 .requires(CommandManager.requirePermissionLevel(CommandManager.GAMEMASTERS_CHECK))
                 .then(CommandManager.literal("reload")
                         .executes(UnknownCommand::executeReload)
+                )
+                .then(CommandManager.literal("debug")
+                        .executes(UnknownCommand::executeDebugToggle)
                 )
                 .then(CommandManager.literal("nickname")
                         .then(CommandManager.argument("value", StringArgumentType.string())
@@ -91,6 +96,19 @@ public class UnknownCommand {
         RevelationManager.onConfigChanged(context.getSource().getServer());
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Config reloaded."), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Config reloaded from /unknown reload.");
+        return 1;
+    }
+
+    private static int executeDebugToggle(CommandContext<ServerCommandSource> context) {
+        UnknownConfig config = ConfigManager.getConfig();
+        config.debug.enabled = !config.debug.enabled;
+        ConfigManager.save();
+
+        MinecraftServer server = context.getSource().getServer();
+        String state = config.debug.enabled ? "enabled" : "disabled";
+        DebugMessenger.announce(server, "Debug mode " + state + ".");
+        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Debug mode " + state + "."), false);
         return 1;
     }
 
@@ -101,6 +119,7 @@ public class UnknownCommand {
         ConfigManager.save();
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Anonymous nickname set: " + value), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Anonymous nickname updated to " + value + ".");
         return 1;
     }
 
@@ -137,21 +156,25 @@ public class UnknownCommand {
             case "texture" -> {
                 config.anonymous.skin.texture = value;
                 config.anonymous.skin.type = "texture";
+                DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin texture updated.");
             }
             case "nickname" -> {
                 SkinFetcher.SkinData textures = SkinFetcher.fetchTexturesByNickname(value);
                 if (textures == null) {
                     context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to resolve skin for: " + value));
+                    DebugMessenger.debug(context.getSource().getServer(), "Failed to resolve skin texture for nickname " + value + ".");
                     return 0;
                 }
                 config.anonymous.skin.nickname = value;
                 config.anonymous.skin.texture = textures.value;
                 config.anonymous.skin.signature = textures.signature;
                 config.anonymous.skin.type = "texture";
+                DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin resolved from nickname " + value + ".");
             }
             case "signature" -> {
                 config.anonymous.skin.signature = value;
                 config.anonymous.skin.type = "texture";
+                DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin signature updated.");
             }
             default -> {
                 return 0;
@@ -232,6 +255,7 @@ public class UnknownCommand {
         ConfigManager.save();
         RevelationManager.onConfigChanged(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format(config.revelation.messages.intervalSet, "hours", hours), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Revelation interval set to " + hours + " hours.");
         return 1;
     }
 
@@ -242,6 +266,7 @@ public class UnknownCommand {
         ConfigManager.save();
         RevelationManager.onConfigChanged(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format(config.revelation.messages.durationSet, "minutes", minutes), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Revelation duration set to " + minutes + " minutes.");
         return 1;
     }
 
@@ -252,12 +277,14 @@ public class UnknownCommand {
         ConfigManager.save();
         RevelationManager.onConfigChanged(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format(config.revelation.messages.minPlayersSet, "n", n), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Revelation minimum players set to " + n + ".");
         return 1;
     }
 
     private static int executeRevealStatus(CommandContext<ServerCommandSource> context) {
         String status = RevelationManager.getStatusLine(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format(status), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Revelation status requested.");
         return 1;
     }
 }

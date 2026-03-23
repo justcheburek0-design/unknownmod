@@ -1,7 +1,9 @@
 package com.unknownmod.event;
 
 import com.unknownmod.state.GhostStateManager;
+import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.ServerContextHolder;
+import com.unknownmod.util.DebugMessenger;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -60,9 +62,9 @@ public class PlayerDeathHandler {
         }
 
         recentPlayerParticipation.put(victim.getUuid(), new PlayerParticipation(
+                player.getUuid(),
                 player.getName().getString(),
-                System.currentTimeMillis(),
-                isRenamedWeaponKill(damageSource, player, victim)
+                System.currentTimeMillis()
         ));
     }
 
@@ -97,6 +99,24 @@ public class PlayerDeathHandler {
             return;
         }
 
+        boolean renamedWeaponKill = false;
+        if (directParticipant != null) {
+            renamedWeaponKill = isRenamedWeaponKill(damageSource, directParticipant, victim);
+        }
+
+        if (!renamedWeaponKill && participation != null) {
+            ServerPlayerEntity participatingPlayer = server.getPlayerManager().getPlayer(participation.playerUuid());
+            if (participatingPlayer != null) {
+                renamedWeaponKill = isRenamedWeaponKill(damageSource, participatingPlayer, victim);
+            }
+        }
+
+        if (!renamedWeaponKill) {
+            processedDeaths.remove(victimUuid);
+            return;
+        }
+
+        DebugMessenger.debug(server, "Renamed weapon kill detected for " + victim.getName().getString() + "; applying ghost state.");
         GhostStateManager.makeGhost(server, victim);
     }
 
@@ -124,15 +144,43 @@ public class PlayerDeathHandler {
             return false;
         }
 
-        String weaponName = weapon.getName().getString();
-        String victimName = victim.getName().getString();
-        return weaponName != null && victimName != null && weaponName.equalsIgnoreCase(victimName);
+        String weaponName = normalizeKillName(weapon.getName().getString());
+        String victimName = normalizeKillName(getOriginalPlayerName(victim));
+        return !weaponName.isEmpty() && !victimName.isEmpty() && weaponName.equalsIgnoreCase(victimName);
+    }
+
+    private static String getOriginalPlayerName(ServerPlayerEntity player) {
+        if (player == null) {
+            return "";
+        }
+
+        return IdentityStore.get(player.getUuid())
+                .map(profile -> profile.name())
+                .filter(name -> name != null && !name.isBlank())
+                .orElseGet(() -> player.getGameProfile().name() == null ? "" : player.getGameProfile().name());
+    }
+
+    private static String normalizeKillName(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        String normalized = value.trim();
+        if (normalized.length() >= 2) {
+            char first = normalized.charAt(0);
+            char last = normalized.charAt(normalized.length() - 1);
+            if ((first == '[' && last == ']') || (first == '(' && last == ')') || (first == '{' && last == '}')) {
+                normalized = normalized.substring(1, normalized.length() - 1).trim();
+            }
+        }
+
+        return normalized;
     }
 
     private static void pruneParticipation(long now) {
         recentPlayerParticipation.entrySet().removeIf(entry -> (now - entry.getValue().timestamp()) > PLAYER_PARTICIPATION_WINDOW_MS);
     }
 
-    private record PlayerParticipation(String playerName, long timestamp, boolean renamedWeapon) {
+    private record PlayerParticipation(UUID playerUuid, String playerName, long timestamp) {
     }
 }

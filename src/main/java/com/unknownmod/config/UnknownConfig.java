@@ -8,6 +8,7 @@ public class UnknownConfig {
     public AnonymousSettings anonymous = new AnonymousSettings();
     public MessagesSettings messages = new MessagesSettings();
     public RevelationSettings revelation = new RevelationSettings();
+    public DebugSettings debug = new DebugSettings();
 
     @ConfigSerializable
     public static class AnonymousSettings {
@@ -49,6 +50,12 @@ public class UnknownConfig {
         public int warningMinutes = 5;
 
         public RevelationMessages messages = new RevelationMessages();
+    }
+
+    @ConfigSerializable
+    public static class DebugSettings {
+        @Setting("enabled")
+        public boolean enabled = false;
     }
 
     @ConfigSerializable

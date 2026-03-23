@@ -2,6 +2,7 @@ package com.unknownmod.state;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.unknownmod.util.DebugMessenger;
 import com.unknownmod.util.ProfileApplier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.PersistentState;
@@ -72,6 +73,7 @@ public class GhostStateManager extends PersistentState {
             player.changeGameMode(GameMode.SPECTATOR);
         }
         ProfileApplier.refreshPlayer(server, player);
+        DebugMessenger.debug(server, "Player set to ghost: " + player.getName().getString() + ".");
         return true;
     }
 
@@ -96,6 +98,7 @@ public class GhostStateManager extends PersistentState {
         }
 
         ProfileApplier.refreshPlayer(server, player);
+        DebugMessenger.debug(server, "Player restored from ghost: " + player.getName().getString() + ".");
         return true;
     }
 

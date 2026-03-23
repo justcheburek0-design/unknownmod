@@ -2,6 +2,7 @@ package com.unknownmod.state;
 
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
+import com.unknownmod.util.DebugMessenger;
 import com.unknownmod.util.MessageFormatter;
 import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.util.RevealGlowManager;
@@ -54,6 +55,7 @@ public final class RevelationManager {
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelTitle));
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelSubtitle, "player", playerName));
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelChat, "player", playerName));
+        DebugMessenger.debug(server, "Reveal cancelled for " + playerName + ".");
         return true;
     }
 
@@ -72,6 +74,7 @@ public final class RevelationManager {
         state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(ConfigManager.getConfig()));
         state.setWarningSent(false);
         RevealGlowManager.clearReveal(server, uuid, playerName);
+        DebugMessenger.debug(server, "Reveal cleared for " + playerName + ".");
         return true;
     }
 
@@ -93,6 +96,7 @@ public final class RevelationManager {
                 "player", playerName,
                 "killer", killerName
         ));
+        DebugMessenger.debug(server, "Revealed player eliminated: " + playerName + " by " + killerName + ".");
         return true;
     }
 
@@ -137,17 +141,20 @@ public final class RevelationManager {
                 state.clearActiveReveal();
                 RevealGlowManager.clearReveal(server, revealedUuid, playerName);
                 ProfileApplier.refreshAllOnline(server);
+                DebugMessenger.debug(server, "Revelation disabled in config; active reveal cleared.");
             }
             return;
         }
 
         if (state.hasActiveReveal()) {
             state.setRevealEndsAtMillis(now + durationMillis(config));
+            DebugMessenger.debug(server, "Active revelation rescheduled after config change.");
             return;
         }
 
         state.setNextRevealAtMillis(now + intervalMillis(config));
         state.setWarningSent(false);
+        DebugMessenger.debug(server, "Revelation schedule reset after config change.");
     }
 
     private static void onServerTick(MinecraftServer server) {
@@ -186,6 +193,7 @@ public final class RevelationManager {
         if (state.getNextRevealAtMillis() <= 0L) {
             state.setNextRevealAtMillis(now + intervalMillis(config));
             state.setWarningSent(false);
+            DebugMessenger.debug(server, "Next revelation timestamp initialized.");
             return;
         }
 
@@ -194,6 +202,7 @@ public final class RevelationManager {
         if (!state.isWarningSent() && config.revelation.warningMinutes > 0 && warningMillis > 0L && now >= warningAt && now < state.getNextRevealAtMillis()) {
             state.setWarningSent(true);
             broadcast(server, MessageFormatter.format(config.revelation.messages.warning, "minutes", config.revelation.warningMinutes));
+            DebugMessenger.debug(server, "Revelation warning broadcast sent.");
         }
 
         if (now < state.getNextRevealAtMillis()) {
@@ -205,6 +214,7 @@ public final class RevelationManager {
             broadcast(server, MessageFormatter.format(config.revelation.messages.notEnoughPlayers));
             state.setNextRevealAtMillis(now + intervalMillis(config));
             state.setWarningSent(false);
+            DebugMessenger.debug(server, "Revelation postponed because only " + onlinePlayers + " players are online.");
             return;
         }
 
@@ -213,6 +223,7 @@ public final class RevelationManager {
             broadcast(server, MessageFormatter.format(config.revelation.messages.notEnoughPlayers));
             state.setNextRevealAtMillis(now + intervalMillis(config));
             state.setWarningSent(false);
+            DebugMessenger.debug(server, "Revelation postponed because no eligible players were found.");
             return;
         }
 
@@ -220,24 +231,29 @@ public final class RevelationManager {
         startReveal(server, target);
         state.setNextRevealAtMillis(now + intervalMillis(config));
         state.setWarningSent(false);
+        DebugMessenger.debug(server, "Random revelation started for " + target.getName().getString() + ".");
     }
 
     private static boolean startReveal(MinecraftServer server, ServerPlayerEntity target) {
         UnknownConfig config = ConfigManager.getConfig();
         if (config.revelation == null || !config.revelation.enabled) {
+            DebugMessenger.debug(server, "Reveal request rejected because feature is disabled.");
             return false;
         }
 
         RevelationStateManager state = RevelationStateManager.getServerState(server);
         if (state.hasActiveReveal() || target == null) {
+            DebugMessenger.debug(server, "Reveal request rejected because another reveal is active or target is null.");
             return false;
         }
 
         if (GhostStateManager.getServerState(server).isGhost(target.getUuid())) {
+            DebugMessenger.debug(server, "Reveal request rejected because target is a ghost: " + target.getName().getString() + ".");
             return false;
         }
 
         if (!ProfileApplier.applyOriginalProfile(target)) {
+            DebugMessenger.debug(server, "Reveal request rejected because original profile could not be applied for " + target.getName().getString() + ".");
             return false;
         }
 
@@ -250,6 +266,7 @@ public final class RevelationManager {
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealTitle));
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealSubtitle, "player", target.getName().getString()));
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealChat, "player", target.getName().getString()));
+        DebugMessenger.debug(server, "Reveal started for " + target.getName().getString() + ".");
         return true;
     }
 

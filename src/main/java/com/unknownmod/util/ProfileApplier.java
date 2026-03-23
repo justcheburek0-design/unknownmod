@@ -12,6 +12,9 @@ import com.unknownmod.mixin.PlayerEntityAccessor;
 import com.unknownmod.mixin.PlayerListS2CPacketAccessor;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
+import net.lionarius.skinrestorer.skin.SkinService;
+import net.lionarius.skinrestorer.skin.SkinValue;
+import net.lionarius.skinrestorer.skin.SkinVariant;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -143,7 +146,7 @@ public final class ProfileApplier {
             return;
         }
 
-        applyAnonymousProfile(player, config);
+        applyAnonymousProfile(server, player, config);
     }
 
     public static boolean applyOriginalProfile(ServerPlayerEntity player) {
@@ -156,7 +159,7 @@ public final class ProfileApplier {
         return true;
     }
 
-    public static void applyAnonymousProfile(ServerPlayerEntity player, UnknownConfig config) {
+    public static void applyAnonymousProfile(MinecraftServer server, ServerPlayerEntity player, UnknownConfig config) {
         GameProfile baseProfile = IdentityStore.get(player.getUuid()).orElse(player.getGameProfile());
         String anonymousName = baseProfile.name();
         if (config.anonymous != null && config.anonymous.name != null && !config.anonymous.name.isBlank()) {
@@ -165,6 +168,7 @@ public final class ProfileApplier {
 
         GameProfile newProfile = new GameProfile(baseProfile.id(), anonymousName);
         Multimap<String, Property> multimap = HashMultimap.create();
+        Property texturesProp = resolveTextures(config);
 
         for (var entry : baseProfile.properties().entries()) {
             if (!"textures".equals(entry.getKey())) {
@@ -172,10 +176,7 @@ public final class ProfileApplier {
             }
         }
 
-        Property texturesProp = resolveTextures(config);
-        if (texturesProp != null) {
-            multimap.put("textures", texturesProp);
-        } else {
+        if (texturesProp == null) {
             for (var entry : baseProfile.properties().entries()) {
                 if ("textures".equals(entry.getKey())) {
                     multimap.put(entry.getKey(), entry.getValue());
@@ -185,6 +186,10 @@ public final class ProfileApplier {
 
         ((GameProfileAccessor) (Object) newProfile).setProperties(new PropertyMap(multimap));
         ((PlayerEntityAccessor) player).setGameProfile(newProfile);
+
+        if (texturesProp != null) {
+            SkinService.applySkin(server, List.of(player), new SkinValue("unknownmod", anonymousName, SkinVariant.CLASSIC, texturesProp));
+        }
     }
 
     private static void syncPlayerList(MinecraftServer server) {
