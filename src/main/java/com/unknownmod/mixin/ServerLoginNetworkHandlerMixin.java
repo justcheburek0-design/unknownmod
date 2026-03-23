@@ -9,7 +9,6 @@ import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
 import com.unknownmod.state.RevelationManager;
 import com.unknownmod.util.ProfileApplier;
-import com.unknownmod.util.SkinFetcher;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerLoginNetworkHandler;
 import org.spongepowered.asm.mixin.Mixin;
@@ -47,27 +46,7 @@ public abstract class ServerLoginNetworkHandlerMixin {
         }
 
         String displayName = config.anonymous != null ? config.anonymous.name : null;
-        UnknownConfig.SkinSettings skin = config.anonymous != null ? config.anonymous.skin : null;
-
-        Property texturesProp = null;
-        if (skin != null) {
-            String type = skin.type == null ? "" : skin.type;
-            if ("texture".equalsIgnoreCase(type)) {
-                String texture = skin.texture;
-                String signature = skin.signature;
-                if (texture != null && !texture.isEmpty() && signature != null && !signature.isEmpty()) {
-                    texturesProp = new Property("textures", texture, signature);
-                }
-            } else if ("nickname".equalsIgnoreCase(type)) {
-                String nick = skin.nickname;
-                if (nick != null && !nick.isEmpty()) {
-                    SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(nick);
-                    if (data != null) {
-                        texturesProp = new Property("textures", data.value, data.signature);
-                    }
-                }
-            }
-        }
+        Property texturesProp = ProfileApplier.resolveTextures(config);
 
         boolean changeName = displayName != null && !displayName.isEmpty() && !displayName.equals(profile.name());
         boolean changeSkin = texturesProp != null;

@@ -11,8 +11,8 @@ import net.minecraft.util.Formatting;
 import java.util.UUID;
 
 public final class RevealGlowManager {
-    private static final String HIDDEN_TEAM_NAME = "um_hidden";
-    private static final String REVEAL_TEAM_NAME = "um_reveal";
+    private static final String HIDDEN_TEAM_NAME = "unk_hidden";
+    private static final String REVEAL_TEAM_NAME = "unk_revealed";
 
     private RevealGlowManager() {
     }
@@ -31,7 +31,7 @@ public final class RevealGlowManager {
 
         Scoreboard scoreboard = server.getScoreboard();
         Team hiddenTeam = ensureTeam(scoreboard, HIDDEN_TEAM_NAME, AbstractTeam.VisibilityRule.NEVER, Formatting.WHITE);
-        Team revealTeam = ensureTeam(scoreboard, REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.RED);
+        Team revealTeam = ensureTeam(scoreboard, REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.DARK_RED);
         if (hiddenTeam == null || revealTeam == null) {
             return;
         }
@@ -58,7 +58,7 @@ public final class RevealGlowManager {
             return;
         }
 
-        Team team = ensureTeam(server.getScoreboard(), REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.RED);
+        Team team = ensureTeam(server.getScoreboard(), REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.DARK_RED);
         if (team == null) {
             return;
         }

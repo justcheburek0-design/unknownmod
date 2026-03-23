@@ -164,8 +164,6 @@ public final class RevelationManager {
             return;
         }
 
-        RevealGlowManager.syncPlayerVisibility(server);
-
         UnknownConfig config = ConfigManager.getConfig();
         if (config.revelation == null || !config.revelation.enabled) {
             return;
@@ -260,7 +258,6 @@ public final class RevelationManager {
         long now = System.currentTimeMillis();
         state.setActiveReveal(target.getUuid(), target.getName().getString(), now + durationMillis(config));
         state.setNextRevealAtMillis(now + intervalMillis(config));
-        RevealGlowManager.syncActiveReveal(server);
         ProfileApplier.refreshAllOnline(server);
 
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealTitle));

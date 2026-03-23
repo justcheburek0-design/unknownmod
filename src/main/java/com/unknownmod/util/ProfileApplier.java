@@ -121,13 +121,16 @@ public final class ProfileApplier {
     }
 
     public static void refreshAllOnline(MinecraftServer server) {
-        RevealGlowManager.syncActiveReveal(server);
+        if (server == null) {
+            return;
+        }
+
         UnknownConfig config = ConfigManager.getConfig();
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             applyCurrentProfile(server, player, config);
         }
 
-        syncPlayerList(server);
+        AppearanceSyncManager.syncAllOnline(server);
     }
 
     public static void refreshPlayer(MinecraftServer server, ServerPlayerEntity player) {
@@ -135,9 +138,8 @@ public final class ProfileApplier {
             return;
         }
 
-        RevealGlowManager.syncActiveReveal(server);
         applyCurrentProfile(server, player, ConfigManager.getConfig());
-        syncPlayerList(server);
+        AppearanceSyncManager.syncPlayer(server, player);
     }
 
     public static void applyCurrentProfile(MinecraftServer server, ServerPlayerEntity player, UnknownConfig config) {
@@ -192,16 +194,7 @@ public final class ProfileApplier {
         }
     }
 
-    private static void syncPlayerList(MinecraftServer server) {
-        List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
-        if (players.isEmpty()) {
-            return;
-        }
-
-        server.getPlayerManager().sendToAll(PlayerListS2CPacket.entryFromPlayer(players));
-    }
-
-    private static Property resolveTextures(UnknownConfig config) {
+    public static Property resolveTextures(UnknownConfig config) {
         if (config.anonymous == null || config.anonymous.skin == null) {
             return null;
         }
@@ -216,10 +209,13 @@ public final class ProfileApplier {
             return null;
         }
 
-        if ("nickname".equalsIgnoreCase(type) && skin.nickname != null && !skin.nickname.isBlank()) {
+        if (("skin".equalsIgnoreCase(type) || "nickname".equalsIgnoreCase(type)) && skin.nickname != null && !skin.nickname.isBlank()) {
             SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(skin.nickname);
             if (data != null) {
                 return new Property("textures", data.value, data.signature);
+            }
+            if (skin.texture != null && !skin.texture.isBlank() && skin.signature != null && !skin.signature.isBlank()) {
+                return new Property("textures", skin.texture, skin.signature);
             }
         }
 

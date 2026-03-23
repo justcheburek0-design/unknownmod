@@ -3,6 +3,7 @@ package com.unknownmod.mixin;
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.state.RevelationManager;
 import com.unknownmod.util.MessageFormatter;
+import com.unknownmod.util.AppearanceSyncManager;
 import com.unknownmod.util.ProfileApplier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.PlayerManager;
@@ -38,6 +39,7 @@ public abstract class PlayerManagerMixin {
     @Inject(method = "onPlayerConnect", at = @At("TAIL"))
     private void unknownmod$sendJoinMessage(net.minecraft.network.ClientConnection connection, ServerPlayerEntity player, ConnectedClientData clientData, CallbackInfo ci) {
         ProfileApplier.refreshPlayer(server, player);
+        AppearanceSyncManager.queueViewerSync(player);
         broadcastCustomMessage(ConfigManager.getConfig().messages.joined, player);
     }
 

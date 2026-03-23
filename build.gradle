@@ -85,10 +85,3 @@ task dumpAuthlib {
         }
     }
 }
-
-loom {
-    mixin {
-        defaultRefmapName = "unknownmod-refmap.json"
-        useLegacyMixinAp = true
-    }
-}

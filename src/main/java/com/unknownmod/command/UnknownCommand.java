@@ -42,20 +42,8 @@ public class UnknownCommand {
                         )
                 )
                 .then(CommandManager.literal("skin")
-                        .then(CommandManager.literal("texture")
-                                .then(CommandManager.argument("value", StringArgumentType.string())
-                                        .executes(context -> executeSetSkin(context, "texture"))
-                                )
-                        )
-                        .then(CommandManager.literal("nickname")
-                                .then(CommandManager.argument("value", StringArgumentType.string())
-                                        .executes(context -> executeSetSkin(context, "nickname"))
-                                )
-                        )
-                        .then(CommandManager.literal("signature")
-                                .then(CommandManager.argument("value", StringArgumentType.string())
-                                        .executes(context -> executeSetSkin(context, "signature"))
-                                )
+                        .then(CommandManager.argument("value", StringArgumentType.string())
+                                .executes(UnknownCommand::executeSetSkin)
                         )
                 )
                 .then(CommandManager.literal("reveal")
@@ -148,37 +136,37 @@ public class UnknownCommand {
         return 1;
     }
 
-    private static int executeSetSkin(CommandContext<ServerCommandSource> context, String type) {
+    private static int executeSetSkin(CommandContext<ServerCommandSource> context) {
         String value = StringArgumentType.getString(context, "value");
         UnknownConfig config = ConfigManager.getConfig();
 
-        switch (type) {
-            case "texture" -> {
-                config.anonymous.skin.texture = value;
-                config.anonymous.skin.type = "texture";
-                DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin texture updated.");
-            }
-            case "nickname" -> {
-                SkinFetcher.SkinData textures = SkinFetcher.fetchTexturesByNickname(value);
-                if (textures == null) {
-                    context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to resolve skin for: " + value));
-                    DebugMessenger.debug(context.getSource().getServer(), "Failed to resolve skin texture for nickname " + value + ".");
-                    return 0;
-                }
-                config.anonymous.skin.nickname = value;
-                config.anonymous.skin.texture = textures.value;
-                config.anonymous.skin.signature = textures.signature;
-                config.anonymous.skin.type = "texture";
-                DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin resolved from nickname " + value + ".");
-            }
-            case "signature" -> {
-                config.anonymous.skin.signature = value;
-                config.anonymous.skin.type = "texture";
-                DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin signature updated.");
-            }
-            default -> {
+        if ("texture".equalsIgnoreCase(value)) {
+            if (config.anonymous == null || config.anonymous.skin == null) {
+                context.getSource().sendError(MessageFormatter.format("[UnknownMod] Anonymous skin config is missing."));
                 return 0;
             }
+
+            if (config.anonymous.skin.texture == null || config.anonymous.skin.texture.isBlank()
+                    || config.anonymous.skin.signature == null || config.anonymous.skin.signature.isBlank()) {
+                context.getSource().sendError(MessageFormatter.format("[UnknownMod] No cached texture/signature in config."));
+                return 0;
+            }
+
+            config.anonymous.skin.type = "texture";
+            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin switched to cached texture from config.");
+        } else {
+            SkinFetcher.SkinData textures = SkinFetcher.fetchTexturesByNickname(value);
+            if (textures == null) {
+                context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to resolve skin for: " + value));
+                DebugMessenger.debug(context.getSource().getServer(), "Failed to resolve skin texture for nickname " + value + ".");
+                return 0;
+            }
+
+            config.anonymous.skin.nickname = value;
+            config.anonymous.skin.texture = textures.value;
+            config.anonymous.skin.signature = textures.signature;
+            config.anonymous.skin.type = "nickname";
+            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin resolved from nickname " + value + ".");
         }
 
         ConfigManager.save();
