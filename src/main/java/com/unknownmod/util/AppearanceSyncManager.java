@@ -1,7 +1,6 @@
 package com.unknownmod.util;
 
 import com.unknownmod.mixin.PlayerManagerAccessor;
-import com.unknownmod.state.RevelationStateManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket;

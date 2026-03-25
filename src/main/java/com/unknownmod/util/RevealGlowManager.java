@@ -58,16 +58,17 @@ public final class RevealGlowManager {
             return;
         }
 
-        Team team = ensureTeam(server.getScoreboard(), REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.DARK_RED);
-        if (team == null) {
+        Scoreboard scoreboard = server.getScoreboard();
+        Team revealTeam = ensureTeam(scoreboard, REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.DARK_RED);
+        if (revealTeam == null) {
             return;
         }
 
-        assignToTeam(server.getScoreboard(), team, player.getNameForScoreboard());
+        assignToTeam(scoreboard, revealTeam, player.getNameForScoreboard());
         player.setGlowing(true);
     }
 
-    public static void clearReveal(MinecraftServer server, UUID uuid, String playerName) {
+    public static void clearReveal(MinecraftServer server, UUID uuid) {
         if (server == null) {
             return;
         }
@@ -75,8 +76,20 @@ public final class RevealGlowManager {
         if (uuid != null) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
             if (player != null) {
+                Scoreboard scoreboard = server.getScoreboard();
+                Team revealTeam = scoreboard.getTeam(REVEAL_TEAM_NAME);
+                if (revealTeam != null) {
+                    removeFromTeam(scoreboard, revealTeam, player.getNameForScoreboard());
+                }
                 player.setGlowing(false);
             }
+        }
+    }
+
+    private static void removeFromTeam(Scoreboard scoreboard, Team targetTeam, String scoreHolder) {
+        Team currentTeam = scoreboard.getScoreHolderTeam(scoreHolder);
+        if (currentTeam == targetTeam) {
+            scoreboard.removeScoreHolderFromTeam(scoreHolder, targetTeam);
         }
     }
 

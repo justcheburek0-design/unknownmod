@@ -12,9 +12,6 @@ import com.unknownmod.mixin.PlayerEntityAccessor;
 import com.unknownmod.mixin.PlayerListS2CPacketAccessor;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
-import net.lionarius.skinrestorer.skin.SkinService;
-import net.lionarius.skinrestorer.skin.SkinValue;
-import net.lionarius.skinrestorer.skin.SkinVariant;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -188,10 +185,6 @@ public final class ProfileApplier {
 
         ((GameProfileAccessor) (Object) newProfile).setProperties(new PropertyMap(multimap));
         ((PlayerEntityAccessor) player).setGameProfile(newProfile);
-
-        if (texturesProp != null) {
-            SkinService.applySkin(server, List.of(player), new SkinValue("unknownmod", anonymousName, SkinVariant.CLASSIC, texturesProp));
-        }
     }
 
     public static Property resolveTextures(UnknownConfig config) {

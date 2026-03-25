@@ -14,6 +14,7 @@ import com.unknownmod.state.RevelationManager;
 import com.unknownmod.util.MessageFormatter;
 import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.util.SkinFetcher;
+import com.unknownmod.worldgen.ChunkWorldgenManager;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.MinecraftServer;
@@ -26,6 +27,14 @@ public class UnknownCommand {
                 .requires(CommandManager.requirePermissionLevel(CommandManager.GAMEMASTERS_CHECK))
                 .then(CommandManager.literal("reload")
                         .executes(UnknownCommand::executeReload)
+                )
+                .then(CommandManager.literal("worldgen")
+                        .then(CommandManager.literal("reload")
+                                .executes(UnknownCommand::executeWorldgenReload)
+                        )
+                        .then(CommandManager.literal("status")
+                                .executes(UnknownCommand::executeWorldgenStatus)
+                        )
                 )
                 .then(CommandManager.literal("debug")
                         .executes(UnknownCommand::executeDebugToggle)
@@ -81,10 +90,30 @@ public class UnknownCommand {
 
     private static int executeReload(CommandContext<ServerCommandSource> context) {
         ConfigManager.load();
+        ChunkWorldgenManager.load();
         RevelationManager.onConfigChanged(context.getSource().getServer());
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Config reloaded."), false);
+        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Config and worldgen config reloaded."), false);
         DebugMessenger.debug(context.getSource().getServer(), "Config reloaded from /unknown reload.");
+        return 1;
+    }
+
+    private static int executeWorldgenReload(CommandContext<ServerCommandSource> context) {
+        ChunkWorldgenManager.load();
+        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Worldgen config reloaded."), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Worldgen config reloaded from /unknown worldgen reload.");
+        return 1;
+    }
+
+    private static int executeWorldgenStatus(CommandContext<ServerCommandSource> context) {
+        var config = ChunkWorldgenManager.getConfig();
+        context.getSource().sendFeedback(() -> MessageFormatter.format(
+                "[UnknownMod] Worldgen full chance: " + config.chance
+                        + ", partial chance: " + config.partialChance
+                        + ", overrides: " + config.overrides.size()
+                        + ", partial excludes: " + (config.partialExclusions == null ? 0 : config.partialExclusions.size())
+        ), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Worldgen config status requested.");
         return 1;
     }
 

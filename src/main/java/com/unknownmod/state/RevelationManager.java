@@ -2,6 +2,7 @@ package com.unknownmod.state;
 
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
+import com.unknownmod.util.AppearanceSyncManager;
 import com.unknownmod.util.DebugMessenger;
 import com.unknownmod.util.MessageFormatter;
 import com.unknownmod.util.ProfileApplier;
@@ -50,8 +51,9 @@ public final class RevelationManager {
         state.clearActiveReveal();
         state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(ConfigManager.getConfig()));
         state.setWarningSent(false);
-        RevealGlowManager.clearReveal(server, revealedUuid, playerName);
+        RevealGlowManager.clearReveal(server, revealedUuid);
         ProfileApplier.refreshAllOnline(server);
+        queueViewerSyncAll(server);
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelTitle));
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelSubtitle, "player", playerName));
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelChat, "player", playerName));
@@ -73,7 +75,7 @@ public final class RevelationManager {
         state.clearActiveReveal();
         state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(ConfigManager.getConfig()));
         state.setWarningSent(false);
-        RevealGlowManager.clearReveal(server, uuid, playerName);
+        RevealGlowManager.clearReveal(server, uuid);
         DebugMessenger.debug(server, "Reveal cleared for " + playerName + ".");
         return true;
     }
@@ -89,8 +91,9 @@ public final class RevelationManager {
         state.clearActiveReveal();
         state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(config));
         state.setWarningSent(false);
-        RevealGlowManager.clearReveal(server, victim.getUuid(), playerName);
+        RevealGlowManager.clearReveal(server, victim.getUuid());
         ProfileApplier.refreshAllOnline(server);
+        queueViewerSyncAll(server);
         broadcast(server, MessageFormatter.format(
                 config.revelation.messages.eliminated,
                 "player", playerName,
@@ -139,8 +142,9 @@ public final class RevelationManager {
                 UUID revealedUuid = state.getRevealedPlayerUuid().orElse(null);
                 String playerName = state.getRevealedPlayerName();
                 state.clearActiveReveal();
-                RevealGlowManager.clearReveal(server, revealedUuid, playerName);
+                RevealGlowManager.clearReveal(server, revealedUuid);
                 ProfileApplier.refreshAllOnline(server);
+                queueViewerSyncAll(server);
                 DebugMessenger.debug(server, "Revelation disabled in config; active reveal cleared.");
             }
             return;
@@ -259,6 +263,7 @@ public final class RevelationManager {
         state.setActiveReveal(target.getUuid(), target.getName().getString(), now + durationMillis(config));
         state.setNextRevealAtMillis(now + intervalMillis(config));
         ProfileApplier.refreshAllOnline(server);
+        queueViewerSyncAll(server);
 
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealTitle));
         broadcast(server, MessageFormatter.format(config.revelation.messages.revealSubtitle, "player", target.getName().getString()));
@@ -292,6 +297,16 @@ public final class RevelationManager {
     private static void broadcast(MinecraftServer server, Text text) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             player.sendMessage(text, false);
+        }
+    }
+
+    private static void queueViewerSyncAll(MinecraftServer server) {
+        if (server == null) {
+            return;
+        }
+
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            AppearanceSyncManager.queueViewerSync(player);
         }
     }
 
