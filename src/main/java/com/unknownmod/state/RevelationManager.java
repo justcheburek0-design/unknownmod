@@ -14,6 +14,7 @@ import net.minecraft.text.Text;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -28,7 +29,7 @@ public final class RevelationManager {
     }
 
     public static boolean isRevealed(MinecraftServer server, UUID uuid) {
-        return RevelationStateManager.getServerState(server).getRevealedPlayerUuid().map(uuid::equals).orElse(false);
+        return server != null && RevelationStateManager.getServerState(server).isRevealed(uuid);
     }
 
     public static boolean isRevealed(UUID uuid) {
@@ -46,18 +47,74 @@ public final class RevelationManager {
             return false;
         }
 
-        UUID revealedUuid = state.getRevealedPlayerUuid().orElse(null);
-        String playerName = state.getRevealedPlayerName();
+        List<RevelationStateManager.RevealEntry> activeReveals = state.getActiveRevealEntries();
         state.clearActiveReveal();
         state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(ConfigManager.getConfig()));
         state.setWarningSent(false);
-        RevealGlowManager.clearReveal(server, revealedUuid);
+
+        for (RevelationStateManager.RevealEntry entry : activeReveals) {
+            entry.getUuid().ifPresent(uuid -> RevealGlowManager.clearReveal(server, uuid));
+        }
+
         ProfileApplier.refreshAllOnline(server);
         queueViewerSyncAll(server);
+
+        String playerNames = joinRevealNames(activeReveals);
         broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelTitle));
-        broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelSubtitle, "player", playerName));
-        broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelChat, "player", playerName));
-        DebugMessenger.debug(server, "Reveal cancelled for " + playerName + ".");
+        broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelSubtitle, "player", playerNames));
+        broadcast(server, MessageFormatter.format(ConfigManager.getConfig().revelation.messages.cancelChat, "player", playerNames));
+        DebugMessenger.debug(server, "Reveal cancelled for " + playerNames + ".");
+        return true;
+    }
+
+    public static boolean pauseRevealIfMatches(MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) {
+            return false;
+        }
+
+        RevelationStateManager state = RevelationStateManager.getServerState(server);
+        Optional<RevelationStateManager.RevealEntry> optionalEntry = state.getActiveReveal(uuid);
+        if (optionalEntry.isEmpty()) {
+            return false;
+        }
+
+        RevelationStateManager.RevealEntry entry = optionalEntry.get();
+        if (entry.isPaused()) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        long remaining = entry.getRemainingMillis(now);
+        if (remaining <= 0L) {
+            return removeReveal(server, state, uuid, entry.getPlayerName(), false);
+        }
+
+        if (!state.pauseReveal(uuid, remaining)) {
+            return false;
+        }
+
+        RevealGlowManager.clearReveal(server, uuid);
+        DebugMessenger.debug(server, "Reveal paused for " + entry.getPlayerName() + ".");
+        return true;
+    }
+
+    public static boolean resumeRevealIfPaused(MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) {
+            return false;
+        }
+
+        RevelationStateManager state = RevelationStateManager.getServerState(server);
+        RevelationStateManager.RevealEntry entry = state.getActiveReveal(uuid).orElse(null);
+        if (entry == null || !entry.isPaused()) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        if (!state.resumeReveal(uuid, now)) {
+            return false;
+        }
+
+        DebugMessenger.debug(server, "Reveal resumed for " + entry.getPlayerName() + ".");
         return true;
     }
 
@@ -67,33 +124,23 @@ public final class RevelationManager {
         }
 
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (!state.getRevealedPlayerUuid().map(uuid::equals).orElse(false)) {
+        Optional<RevelationStateManager.RevealEntry> optionalEntry = state.getActiveReveal(uuid);
+        if (optionalEntry.isEmpty()) {
             return false;
         }
 
-        String playerName = state.getRevealedPlayerName();
-        state.clearActiveReveal();
-        state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(ConfigManager.getConfig()));
-        state.setWarningSent(false);
-        RevealGlowManager.clearReveal(server, uuid);
-        DebugMessenger.debug(server, "Reveal cleared for " + playerName + ".");
-        return true;
+        return removeReveal(server, state, uuid, optionalEntry.get().getPlayerName(), false);
     }
 
     public static boolean eliminateReveal(MinecraftServer server, ServerPlayerEntity victim, String killerName) {
         UnknownConfig config = ConfigManager.getConfig();
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (!state.hasActiveReveal() || !state.getRevealedPlayerUuid().map(victim.getUuid()::equals).orElse(false)) {
+        if (!state.isRevealed(victim.getUuid())) {
             return false;
         }
 
         String playerName = victim.getName().getString();
-        state.clearActiveReveal();
-        state.setNextRevealAtMillis(System.currentTimeMillis() + intervalMillis(config));
-        state.setWarningSent(false);
-        RevealGlowManager.clearReveal(server, victim.getUuid());
-        ProfileApplier.refreshAllOnline(server);
-        queueViewerSyncAll(server);
+        removeReveal(server, state, victim.getUuid(), playerName, true);
         broadcast(server, MessageFormatter.format(
                 config.revelation.messages.eliminated,
                 "player", playerName,
@@ -115,12 +162,27 @@ public final class RevelationManager {
     public static String getStatusLine(MinecraftServer server) {
         UnknownConfig config = ConfigManager.getConfig();
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (state.hasActiveReveal()) {
-            String playerName = state.getRevealedPlayerName();
-            long remaining = Math.max(0L, state.getRevealEndsAtMillis() - System.currentTimeMillis());
+        List<RevelationStateManager.RevealEntry> activeReveals = state.getActiveRevealEntries();
+        if (!activeReveals.isEmpty()) {
+            long now = System.currentTimeMillis();
+            long remaining = Long.MAX_VALUE;
+            List<String> names = new ArrayList<>(activeReveals.size());
+
+            for (RevelationStateManager.RevealEntry entry : activeReveals) {
+                String playerName = entry.getPlayerName();
+                if (playerName != null && !playerName.isBlank()) {
+                    names.add(playerName);
+                }
+                remaining = Math.min(remaining, entry.getRemainingMillis(now));
+            }
+
+            if (names.isEmpty()) {
+                names.add("unknown");
+            }
+
             return config.revelation.messages.statusRevealed
-                    .replace("%player%", playerName)
-                    .replace("%time%", formatDuration(remaining));
+                    .replace("%player%", String.join(", ", names))
+                    .replace("%time%", formatDuration(remaining == Long.MAX_VALUE ? 0L : remaining));
         }
 
         if (state.getNextRevealAtMillis() <= 0L) {
@@ -139,20 +201,25 @@ public final class RevelationManager {
         if (config.revelation == null || !config.revelation.enabled) {
             state.clearSchedule();
             if (state.hasActiveReveal()) {
-                UUID revealedUuid = state.getRevealedPlayerUuid().orElse(null);
-                String playerName = state.getRevealedPlayerName();
+                List<RevelationStateManager.RevealEntry> activeReveals = state.getActiveRevealEntries();
                 state.clearActiveReveal();
-                RevealGlowManager.clearReveal(server, revealedUuid);
+                for (RevelationStateManager.RevealEntry entry : activeReveals) {
+                    entry.getUuid().ifPresent(uuid -> RevealGlowManager.clearReveal(server, uuid));
+                }
                 ProfileApplier.refreshAllOnline(server);
                 queueViewerSyncAll(server);
-                DebugMessenger.debug(server, "Revelation disabled in config; active reveal cleared.");
+                DebugMessenger.debug(server, "Revelation disabled in config; active reveals cleared.");
             }
             return;
         }
 
         if (state.hasActiveReveal()) {
-            state.setRevealEndsAtMillis(now + durationMillis(config));
-            DebugMessenger.debug(server, "Active revelation rescheduled after config change.");
+            for (RevelationStateManager.RevealEntry entry : state.getActiveRevealEntries()) {
+                if (!entry.isPaused()) {
+                    entry.setRevealEndsAtMillis(now + durationMillis(config));
+                }
+            }
+            DebugMessenger.debug(server, "Active revelations rescheduled after config change.");
             return;
         }
 
@@ -176,20 +243,50 @@ public final class RevelationManager {
         RevelationStateManager state = RevelationStateManager.getServerState(server);
         long now = System.currentTimeMillis();
 
-        if (state.hasActiveReveal()) {
-            if (now >= state.getRevealEndsAtMillis()) {
-                cancelReveal(server);
-                return;
+        boolean stateChanged = false;
+        List<UUID> expiredReveals = new ArrayList<>();
+
+        for (RevelationStateManager.RevealEntry entry : state.getActiveRevealEntries()) {
+            Optional<UUID> optionalUuid = entry.getUuid();
+            if (optionalUuid.isEmpty()) {
+                continue;
             }
 
-            state.getRevealedPlayerUuid().ifPresent(uuid -> {
-                ServerPlayerEntity victim = server.getPlayerManager().getPlayer(uuid);
-                if (victim != null) {
-                    String remaining = formatDuration(state.getRevealEndsAtMillis() - now);
-                    victim.sendMessage(MessageFormatter.format(config.revelation.messages.victimCountdown, "time", remaining), true);
+            UUID uuid = optionalUuid.get();
+            if (entry.isPaused()) {
+                continue;
+            }
+
+            ServerPlayerEntity victim = server.getPlayerManager().getPlayer(uuid);
+            if (victim == null) {
+                if (pauseRevealIfMatches(server, uuid)) {
+                    stateChanged = true;
                 }
-            });
-            return;
+                continue;
+            }
+
+            long remaining = entry.getRemainingMillis(now);
+            if (remaining <= 0L) {
+                expiredReveals.add(uuid);
+                continue;
+            }
+
+            victim.sendMessage(MessageFormatter.format(config.revelation.messages.victimCountdown, "time", formatDuration(remaining)), true);
+        }
+
+        if (!expiredReveals.isEmpty()) {
+            for (UUID uuid : expiredReveals) {
+                RevelationStateManager.RevealEntry entry = state.getActiveReveal(uuid).orElse(null);
+                String playerName = entry == null ? "" : entry.getPlayerName();
+                if (removeReveal(server, state, uuid, playerName, false)) {
+                    stateChanged = true;
+                }
+            }
+        }
+
+        if (stateChanged) {
+            ProfileApplier.refreshAllOnline(server);
+            queueViewerSyncAll(server);
         }
 
         if (state.getNextRevealAtMillis() <= 0L) {
@@ -211,15 +308,6 @@ public final class RevelationManager {
             return;
         }
 
-        int onlinePlayers = server.getPlayerManager().getPlayerList().size();
-        if (onlinePlayers <= config.revelation.minPlayers) {
-            broadcast(server, MessageFormatter.format(config.revelation.messages.notEnoughPlayers));
-            state.setNextRevealAtMillis(now + intervalMillis(config));
-            state.setWarningSent(false);
-            DebugMessenger.debug(server, "Revelation postponed because only " + onlinePlayers + " players are online.");
-            return;
-        }
-
         List<ServerPlayerEntity> eligible = getEligiblePlayers(server);
         if (eligible.isEmpty()) {
             broadcast(server, MessageFormatter.format(config.revelation.messages.notEnoughPlayers));
@@ -230,10 +318,11 @@ public final class RevelationManager {
         }
 
         ServerPlayerEntity target = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
-        startReveal(server, target);
-        state.setNextRevealAtMillis(now + intervalMillis(config));
-        state.setWarningSent(false);
-        DebugMessenger.debug(server, "Random revelation started for " + target.getName().getString() + ".");
+        if (startReveal(server, target)) {
+            state.setNextRevealAtMillis(now + intervalMillis(config));
+            state.setWarningSent(false);
+            DebugMessenger.debug(server, "Random revelation started for " + target.getName().getString() + ".");
+        }
     }
 
     private static boolean startReveal(MinecraftServer server, ServerPlayerEntity target) {
@@ -244,8 +333,8 @@ public final class RevelationManager {
         }
 
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (state.hasActiveReveal() || target == null) {
-            DebugMessenger.debug(server, "Reveal request rejected because another reveal is active or target is null.");
+        if (target == null || state.isRevealed(target.getUuid())) {
+            DebugMessenger.debug(server, "Reveal request rejected because target is null or already revealed.");
             return false;
         }
 
@@ -261,7 +350,6 @@ public final class RevelationManager {
 
         long now = System.currentTimeMillis();
         state.setActiveReveal(target.getUuid(), target.getName().getString(), now + durationMillis(config));
-        state.setNextRevealAtMillis(now + intervalMillis(config));
         ProfileApplier.refreshAllOnline(server);
         queueViewerSyncAll(server);
 
@@ -272,10 +360,32 @@ public final class RevelationManager {
         return true;
     }
 
+    private static boolean removeReveal(
+            MinecraftServer server,
+            RevelationStateManager state,
+            UUID uuid,
+            String playerName,
+            boolean refreshProfiles
+    ) {
+        if (!state.removeReveal(uuid)) {
+            return false;
+        }
+
+        RevealGlowManager.clearReveal(server, uuid);
+        if (refreshProfiles) {
+            ProfileApplier.refreshAllOnline(server);
+            queueViewerSyncAll(server);
+        }
+        DebugMessenger.debug(server, "Reveal cleared for " + playerName + ".");
+        return true;
+    }
+
     private static List<ServerPlayerEntity> getEligiblePlayers(MinecraftServer server) {
         List<ServerPlayerEntity> players = new ArrayList<>();
+        RevelationStateManager state = RevelationStateManager.getServerState(server);
+        GhostStateManager ghostState = GhostStateManager.getServerState(server);
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (!GhostStateManager.getServerState(server).isGhost(player.getUuid())) {
+            if (!ghostState.isGhost(player.getUuid()) && !state.isRevealed(player.getUuid())) {
                 players.add(player);
             }
         }
@@ -308,6 +418,22 @@ public final class RevelationManager {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             AppearanceSyncManager.queueViewerSync(player);
         }
+    }
+
+    private static String joinRevealNames(List<RevelationStateManager.RevealEntry> entries) {
+        List<String> names = new ArrayList<>();
+        for (RevelationStateManager.RevealEntry entry : entries) {
+            String name = entry.getPlayerName();
+            if (name != null && !name.isBlank()) {
+                names.add(name);
+            }
+        }
+
+        if (names.isEmpty()) {
+            return "unknown";
+        }
+
+        return String.join(", ", names);
     }
 
     private static String formatDuration(long millis) {

@@ -68,7 +68,6 @@ public class GhostStateManager extends PersistentState {
 
         GhostStateManager state = getServerState(server);
         state.addGhost(player.getUuid());
-        RevelationManager.clearRevealIfMatches(server, player.getUuid());
         if (player.getGameMode() != GameMode.SPECTATOR) {
             player.changeGameMode(GameMode.SPECTATOR);
         }
@@ -86,8 +85,6 @@ public class GhostStateManager extends PersistentState {
         if (!state.removeGhost(player.getUuid())) {
             return false;
         }
-
-        RevelationManager.clearRevealIfMatches(server, player.getUuid());
 
         GameMode restoreMode = player.interactionManager.getPreviousGameMode();
         if (restoreMode == null || restoreMode == GameMode.SPECTATOR) {

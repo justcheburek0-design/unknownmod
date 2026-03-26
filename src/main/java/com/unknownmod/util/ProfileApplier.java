@@ -159,7 +159,10 @@ public final class ProfileApplier {
     }
 
     public static void applyAnonymousProfile(MinecraftServer server, ServerPlayerEntity player, UnknownConfig config) {
-        GameProfile baseProfile = IdentityStore.get(player.getUuid()).orElse(player.getGameProfile());
+        GameProfile baseProfile = getOriginalProfile(player.getUuid());
+        if (baseProfile == null) {
+            baseProfile = IdentityStore.get(player.getUuid()).orElse(player.getGameProfile());
+        }
         String anonymousName = baseProfile.name();
         if (config.anonymous != null && config.anonymous.name != null && !config.anonymous.name.isBlank()) {
             anonymousName = config.anonymous.name;

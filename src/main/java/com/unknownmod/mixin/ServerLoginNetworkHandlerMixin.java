@@ -39,6 +39,10 @@ public abstract class ServerLoginNetworkHandlerMixin {
         ProfileApplier.rememberOriginalProfile(profile);
 
         UnknownConfig config = ConfigManager.getConfig();
+        GameProfile originalProfile = ProfileApplier.getOriginalProfile(profile.id());
+        if (originalProfile == null) {
+            originalProfile = profile;
+        }
         boolean revealed = server != null && RevelationManager.isRevealed(server, profile.id());
         if (revealed) {
             unknownmod$patched = true;
@@ -58,7 +62,7 @@ public abstract class ServerLoginNetworkHandlerMixin {
         GameProfile newProfile = new GameProfile(profile.id(), finalName);
 
         Multimap<String, Property> multimap = HashMultimap.create();
-        for (var entry : profile.properties().entries()) {
+        for (var entry : originalProfile.properties().entries()) {
             if (!"textures".equals(entry.getKey())) {
                 multimap.put(entry.getKey(), entry.getValue());
             }
@@ -67,7 +71,7 @@ public abstract class ServerLoginNetworkHandlerMixin {
         if (texturesProp != null) {
             multimap.put("textures", texturesProp);
         } else {
-            for (var entry : profile.properties().entries()) {
+            for (var entry : originalProfile.properties().entries()) {
                 if ("textures".equals(entry.getKey())) {
                     multimap.put(entry.getKey(), entry.getValue());
                 }

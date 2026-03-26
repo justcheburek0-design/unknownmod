@@ -8,6 +8,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Formatting;
 
+import java.util.HashSet;
 import java.util.UUID;
 
 public final class RevealGlowManager {
@@ -27,7 +28,7 @@ public final class RevealGlowManager {
         }
 
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        UUID revealedUuid = state.getRevealedPlayerUuid().orElse(null);
+        HashSet<UUID> revealedUuids = new HashSet<>(state.getActiveRevealUuids());
 
         Scoreboard scoreboard = server.getScoreboard();
         Team hiddenTeam = ensureTeam(scoreboard, HIDDEN_TEAM_NAME, AbstractTeam.VisibilityRule.NEVER, Formatting.WHITE);
@@ -38,7 +39,7 @@ public final class RevealGlowManager {
 
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             String scoreHolder = player.getNameForScoreboard();
-            if (revealedUuid != null && revealedUuid.equals(player.getUuid())) {
+            if (revealedUuids.contains(player.getUuid())) {
                 assignToTeam(scoreboard, revealTeam, scoreHolder);
                 player.setGlowing(true);
             } else {
@@ -54,7 +55,7 @@ public final class RevealGlowManager {
         }
 
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (!state.getRevealedPlayerUuid().map(player.getUuid()::equals).orElse(false)) {
+        if (!state.isRevealed(player.getUuid())) {
             return;
         }
 

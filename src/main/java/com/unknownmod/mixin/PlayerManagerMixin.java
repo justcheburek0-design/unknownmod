@@ -38,6 +38,7 @@ public abstract class PlayerManagerMixin {
 
     @Inject(method = "onPlayerConnect", at = @At("TAIL"))
     private void unknownmod$sendJoinMessage(net.minecraft.network.ClientConnection connection, ServerPlayerEntity player, ConnectedClientData clientData, CallbackInfo ci) {
+        RevelationManager.resumeRevealIfPaused(server, player.getUuid());
         ProfileApplier.refreshPlayer(server, player);
         AppearanceSyncManager.queueViewerSync(player);
         broadcastCustomMessage(ConfigManager.getConfig().messages.joined, player);
@@ -46,6 +47,7 @@ public abstract class PlayerManagerMixin {
     @Inject(method = "remove", at = @At("HEAD"))
     private void unknownmod$markLeaveBroadcastSuppressed(ServerPlayerEntity player, CallbackInfo ci) {
         unknownmod$suppressLeaveBroadcast = true;
+        RevelationManager.pauseRevealIfMatches(server, player.getUuid());
     }
 
     @Inject(method = "broadcast(Lnet/minecraft/text/Text;Z)V", at = @At("HEAD"), cancellable = true)
