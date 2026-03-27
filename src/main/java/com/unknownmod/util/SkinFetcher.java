@@ -31,8 +31,18 @@ public final class SkinFetcher {
         }
 
         String cacheKey = nickname.toLowerCase(Locale.ROOT);
-        Optional<SkinData> cached = CACHE.computeIfAbsent(cacheKey, key -> Optional.ofNullable(fetchTexturesByNicknameUncached(nickname)));
-        return cached.orElse(null);
+        Optional<SkinData> cached = CACHE.get(cacheKey);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+
+        SkinData fetched = fetchTexturesByNicknameUncached(nickname);
+        if (fetched == null) {
+            return null;
+        }
+
+        CACHE.putIfAbsent(cacheKey, Optional.of(fetched));
+        return fetched;
     }
 
     private static SkinData fetchTexturesByNicknameUncached(String nickname) {
@@ -54,6 +64,10 @@ public final class SkinFetcher {
 
             Property property = textures.get();
             if (property.value() == null || property.value().isBlank()) {
+                return null;
+            }
+
+            if (property.signature() == null || property.signature().isBlank()) {
                 return null;
             }
 
