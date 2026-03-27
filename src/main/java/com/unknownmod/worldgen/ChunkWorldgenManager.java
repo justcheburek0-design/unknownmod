@@ -1,8 +1,6 @@
 package com.unknownmod.worldgen;
 
 import com.unknownmod.UnknownMod;
-import dev.worldgen.lithostitched.api.util.Weighted;
-import dev.worldgen.lithostitched.api.util.WeightedList;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -110,8 +108,8 @@ public final class ChunkWorldgenManager {
     }
 
     private static CompiledChunkWorldgenConfig compile(ChunkWorldgenConfig raw) {
-        List<Weighted<CompiledChunkOverride>> fullOverrides = new ArrayList<>();
-        List<Weighted<CompiledChunkOverride>> partialOverrides = new ArrayList<>();
+        List<WeightedEntry<CompiledChunkOverride>> fullOverrides = new ArrayList<>();
+        List<WeightedEntry<CompiledChunkOverride>> partialOverrides = new ArrayList<>();
         List<String> exclusions = new ArrayList<>();
 
         if (raw != null && raw.partialExclusions != null) {
@@ -123,8 +121,8 @@ public final class ChunkWorldgenManager {
                     0,
                     0,
                     exclusions,
-                    WeightedList.<CompiledChunkOverride>of(),
-                    WeightedList.<CompiledChunkOverride>of()
+                    WeightedPool.<CompiledChunkOverride>empty(),
+                    WeightedPool.<CompiledChunkOverride>empty()
             );
         }
 
@@ -144,7 +142,7 @@ public final class ChunkWorldgenManager {
                 continue;
             }
 
-            List<Weighted<CompiledBlockChoice>> blockPool = new ArrayList<>();
+            List<WeightedEntry<CompiledBlockChoice>> blockPool = new ArrayList<>();
             for (Map.Entry<String, Integer> blockEntry : source.blocks.entrySet()) {
                 int blockWeight = blockEntry.getValue() == null ? 0 : blockEntry.getValue();
                 if (blockWeight <= 0) {
@@ -152,12 +150,12 @@ public final class ChunkWorldgenManager {
                 }
 
                 if ("save".equalsIgnoreCase(blockEntry.getKey())) {
-                    blockPool.add(new Weighted<>(CompiledBlockChoice.save(), blockWeight));
+                    blockPool.add(new WeightedEntry<>(CompiledBlockChoice.save(), blockWeight));
                     continue;
                 }
 
                 resolveBlockState(blockEntry.getKey()).ifPresentOrElse(
-                        state -> blockPool.add(new Weighted<>(CompiledBlockChoice.block(state), blockWeight)),
+                        state -> blockPool.add(new WeightedEntry<>(CompiledBlockChoice.block(state), blockWeight)),
                         () -> UnknownMod.LOGGER.warn("Worldgen pack '{}' contains unknown block '{}'", name, blockEntry.getKey())
                 );
             }
@@ -167,15 +165,15 @@ public final class ChunkWorldgenManager {
                 continue;
             }
 
-            addOverride(fullOverrides, partialOverrides, mode, CompiledChunkOverride.pack(name, WeightedList.of(blockPool)), source.weight);
+            addOverride(fullOverrides, partialOverrides, mode, CompiledChunkOverride.pack(name, WeightedPool.of(blockPool)), source.weight);
         }
 
         return new CompiledChunkWorldgenConfig(
                 Math.max(0, raw.chance),
                 Math.max(0, raw.partialChance),
                 exclusions,
-                WeightedList.of(fullOverrides),
-                WeightedList.of(partialOverrides)
+                WeightedPool.of(fullOverrides),
+                WeightedPool.of(partialOverrides)
         );
     }
 
@@ -206,13 +204,13 @@ public final class ChunkWorldgenManager {
     }
 
     private static void addOverride(
-            List<Weighted<CompiledChunkOverride>> fullOverrides,
-            List<Weighted<CompiledChunkOverride>> partialOverrides,
+            List<WeightedEntry<CompiledChunkOverride>> fullOverrides,
+            List<WeightedEntry<CompiledChunkOverride>> partialOverrides,
             OverrideMode mode,
             CompiledChunkOverride override,
             int weight
     ) {
-        Weighted<CompiledChunkOverride> weighted = new Weighted<>(override, weight);
+        WeightedEntry<CompiledChunkOverride> weighted = new WeightedEntry<>(override, weight);
         if (mode == OverrideMode.ALL) {
             fullOverrides.add(weighted);
             partialOverrides.add(weighted);
@@ -349,16 +347,16 @@ public final class ChunkWorldgenManager {
             int fullChance,
             int partialChance,
             List<String> partialExclusions,
-            WeightedList<CompiledChunkOverride> fullOverrides,
-            WeightedList<CompiledChunkOverride> partialOverrides
+            WeightedPool<CompiledChunkOverride> fullOverrides,
+            WeightedPool<CompiledChunkOverride> partialOverrides
     ) {
         public static CompiledChunkWorldgenConfig empty() {
             return new CompiledChunkWorldgenConfig(
                     0,
                     0,
                     List.of(),
-                    WeightedList.<CompiledChunkOverride>of(),
-                    WeightedList.<CompiledChunkOverride>of()
+                    WeightedPool.<CompiledChunkOverride>empty(),
+                    WeightedPool.<CompiledChunkOverride>empty()
             );
         }
 
@@ -376,8 +374,8 @@ public final class ChunkWorldgenManager {
 
         public Optional<CompiledChunkOverride> pickOverride(Random random, FillMode mode) {
             return switch (mode) {
-                case FULL -> fullOverrides.getRandom(random);
-                case PARTIAL -> partialOverrides.getRandom(random);
+                case FULL -> fullOverrides.pick(random);
+                case PARTIAL -> partialOverrides.pick(random);
                 default -> Optional.empty();
             };
         }
@@ -455,12 +453,12 @@ public final class ChunkWorldgenManager {
         PART
     }
 
-    public record CompiledChunkOverride(String name, BlockState fixedState, WeightedList<CompiledBlockChoice> blockPool) {
+    public record CompiledChunkOverride(String name, BlockState fixedState, WeightedPool<CompiledBlockChoice> blockPool) {
         public static CompiledChunkOverride simple(String name, BlockState state) {
-            return new CompiledChunkOverride(name, state, WeightedList.<CompiledBlockChoice>of());
+            return new CompiledChunkOverride(name, state, WeightedPool.<CompiledBlockChoice>empty());
         }
 
-        public static CompiledChunkOverride pack(String name, WeightedList<CompiledBlockChoice> blockPool) {
+        public static CompiledChunkOverride pack(String name, WeightedPool<CompiledBlockChoice> blockPool) {
             return new CompiledChunkOverride(name, null, blockPool);
         }
 
@@ -469,7 +467,11 @@ public final class ChunkWorldgenManager {
                 return Optional.of(fixedState);
             }
 
-            CompiledBlockChoice choice = blockPool.getRandomOrThrow(random);
+            CompiledBlockChoice choice = blockPool.pick(random).orElse(null);
+            if (choice == null) {
+                return Optional.empty();
+            }
+
             if (choice.keepCurrent()) {
                 return Optional.empty();
             }
@@ -485,6 +487,57 @@ public final class ChunkWorldgenManager {
 
         public static CompiledBlockChoice block(BlockState state) {
             return new CompiledBlockChoice(false, state);
+        }
+    }
+
+    private record WeightedEntry<T>(T value, int weight) {
+    }
+
+    private static final class WeightedPool<T> {
+        private final List<WeightedEntry<T>> entries;
+        private final int totalWeight;
+
+        private WeightedPool(List<WeightedEntry<T>> entries) {
+            this.entries = List.copyOf(entries);
+            int total = 0;
+            for (WeightedEntry<T> entry : this.entries) {
+                if (entry != null && entry.weight() > 0) {
+                    total += entry.weight();
+                }
+            }
+            this.totalWeight = total;
+        }
+
+        private static <T> WeightedPool<T> empty() {
+            return new WeightedPool<>(List.of());
+        }
+
+        private static <T> WeightedPool<T> of(List<WeightedEntry<T>> entries) {
+            return new WeightedPool<>(entries);
+        }
+
+        private boolean isEmpty() {
+            return entries.isEmpty() || totalWeight <= 0;
+        }
+
+        private Optional<T> pick(Random random) {
+            if (isEmpty()) {
+                return Optional.empty();
+            }
+
+            int roll = random.nextInt(totalWeight);
+            for (WeightedEntry<T> entry : entries) {
+                if (entry == null || entry.weight() <= 0) {
+                    continue;
+                }
+
+                roll -= entry.weight();
+                if (roll < 0) {
+                    return Optional.ofNullable(entry.value());
+                }
+            }
+
+            return Optional.empty();
         }
     }
 }

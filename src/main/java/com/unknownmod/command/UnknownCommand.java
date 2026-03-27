@@ -65,6 +65,10 @@ public class UnknownCommand {
                         )
                         .then(CommandManager.literal("cancel")
                                 .executes(UnknownCommand::executeRevealCancel)
+                                .then(CommandManager.argument("target", StringArgumentType.word())
+                                        .suggests(UnknownCommand::suggestRevealedPlayerNames)
+                                        .executes(UnknownCommand::executeRevealCancelTarget)
+                                )
                         )
                         .then(CommandManager.literal("interval")
                                 .then(CommandManager.argument("hours", IntegerArgumentType.integer(1))
@@ -263,6 +267,33 @@ public class UnknownCommand {
 
         context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Revelation cancelled."), false);
         return 1;
+    }
+
+    private static int executeRevealCancelTarget(CommandContext<ServerCommandSource> context) {
+        String targetName = StringArgumentType.getString(context, "target");
+        java.util.Optional<java.util.UUID> targetUuid = RevelationManager.findActiveRevealUuidByName(context.getSource().getServer(), targetName);
+        if (targetUuid.isEmpty()) {
+            context.getSource().sendError(MessageFormatter.format("[UnknownMod] Revealed player not found: " + targetName));
+            return 0;
+        }
+
+        if (!RevelationManager.cancelReveal(context.getSource().getServer(), targetUuid.get())) {
+            context.getSource().sendError(MessageFormatter.format(ConfigManager.getConfig().revelation.messages.noActive));
+            return 0;
+        }
+
+        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Revelation cancelled for " + targetName), false);
+        return 1;
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestRevealedPlayerNames(
+            CommandContext<ServerCommandSource> context,
+            SuggestionsBuilder builder
+    ) {
+        for (String name : RevelationManager.getActiveRevealNames(context.getSource().getServer())) {
+            builder.suggest(name);
+        }
+        return builder.buildFuture();
     }
 
     private static int executeRevealInterval(CommandContext<ServerCommandSource> context) {

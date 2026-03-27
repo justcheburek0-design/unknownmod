@@ -58,7 +58,8 @@
 - `/unknown reveal status` показывает корректный таймер;
 - предупреждение приходит за `warning-minutes` до `reveal`;
 - `reveal` автоматически завершается по таймеру;
-- `/unknown reveal cancel` отменяет активный `reveal`;
+- `/unknown reveal cancel` отменяет все активные `reveal`;
+- `/unknown reveal cancel <player>` даёт выбор среди уже раскрытых игроков и отменяет только выбранного;
 - при `revelation.enabled = false` `reveal` не стартует;
 - при недостатке игроков событие откладывается, а не падает с ошибкой.
 

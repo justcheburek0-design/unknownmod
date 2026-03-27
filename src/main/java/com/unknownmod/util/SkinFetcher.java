@@ -1,10 +1,8 @@
 package com.unknownmod.util;
 
 import com.mojang.authlib.properties.Property;
-import net.lionarius.skinrestorer.SkinRestorer;
-import net.lionarius.skinrestorer.skin.SkinVariant;
-import net.lionarius.skinrestorer.skin.provider.SkinProvider;
 
+import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,17 +45,31 @@ public final class SkinFetcher {
 
     private static SkinData fetchTexturesByNicknameUncached(String nickname) {
         try {
-            Optional<SkinProvider> provider = SkinRestorer.getProvider("mojang");
-            if (provider.isEmpty()) {
+            Class<?> skinRestorerClass = Class.forName("net.lionarius.skinrestorer.SkinRestorer");
+            Method getProvider = skinRestorerClass.getMethod("getProvider", String.class);
+            Optional<?> provider = (Optional<?>) getProvider.invoke(null, "mojang");
+            if (provider == null || provider.isEmpty()) {
                 return null;
             }
 
-            var result = provider.get().fetchSkin(nickname, SkinVariant.CLASSIC);
-            if (result == null || result.isError()) {
+            Object providerInstance = provider.get();
+            Class<?> skinVariantClass = Class.forName("net.lionarius.skinrestorer.skin.SkinVariant");
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            Object classicVariant = Enum.valueOf((Class) skinVariantClass.asSubclass(Enum.class), "CLASSIC");
+
+            Method fetchSkin = providerInstance.getClass().getMethod("fetchSkin", String.class, skinVariantClass);
+            Object result = fetchSkin.invoke(providerInstance, nickname, classicVariant);
+            if (result == null) {
                 return null;
             }
 
-            Optional<Property> textures = result.getSuccessValue();
+            Method isError = result.getClass().getMethod("isError");
+            if (Boolean.TRUE.equals(isError.invoke(result))) {
+                return null;
+            }
+
+            Method getSuccessValue = result.getClass().getMethod("getSuccessValue");
+            Optional<Property> textures = (Optional<Property>) getSuccessValue.invoke(result);
             if (textures == null || textures.isEmpty()) {
                 return null;
             }
@@ -72,7 +84,7 @@ public final class SkinFetcher {
             }
 
             return new SkinData(property.value(), property.signature());
-        } catch (Exception ignored) {
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
             return null;
         }
     }
