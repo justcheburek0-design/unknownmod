@@ -9,7 +9,9 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.LightningEntity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
@@ -118,6 +120,7 @@ public class PlayerDeathHandler {
 
         DebugMessenger.debug(server, "Renamed weapon kill detected for " + victim.getName().getString() + "; applying ghost state.");
         GhostStateManager.makeGhost(server, victim);
+        summonCosmeticLightning(victim);
     }
 
     private static ServerPlayerEntity resolvePlayerParticipant(DamageSource damageSource) {
@@ -175,6 +178,18 @@ public class PlayerDeathHandler {
         }
 
         return normalized;
+    }
+
+    private static void summonCosmeticLightning(ServerPlayerEntity victim) {
+        ServerWorld world = victim.getEntityWorld();
+        if (world == null) {
+            return;
+        }
+
+        LightningEntity lightning = new LightningEntity(EntityType.LIGHTNING_BOLT, world);
+        lightning.setCosmetic(true);
+        lightning.refreshPositionAndAngles(victim.getX(), victim.getY(), victim.getZ(), 0.0f, 0.0f);
+        world.spawnEntity(lightning);
     }
 
     private static void pruneParticipation(long now) {

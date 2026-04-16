@@ -172,21 +172,21 @@ public class UnknownCommand {
     private static int executeSetSkin(CommandContext<ServerCommandSource> context) {
         String value = StringArgumentType.getString(context, "value");
         UnknownConfig config = ConfigManager.getConfig();
+        if (config.anonymous == null) {
+            config.anonymous = new UnknownConfig.AnonymousSettings();
+        }
+        if (config.anonymous.skin == null) {
+            config.anonymous.skin = new UnknownConfig.SkinSettings();
+        }
 
         if ("texture".equalsIgnoreCase(value)) {
-            if (config.anonymous == null || config.anonymous.skin == null) {
-                context.getSource().sendError(MessageFormatter.format("[UnknownMod] Anonymous skin config is missing."));
-                return 0;
-            }
-
             if (config.anonymous.skin.texture == null || config.anonymous.skin.texture.isBlank()
                     || config.anonymous.skin.signature == null || config.anonymous.skin.signature.isBlank()) {
                 context.getSource().sendError(MessageFormatter.format("[UnknownMod] No cached texture/signature in config."));
                 return 0;
             }
 
-            config.anonymous.skin.type = "texture";
-            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin switched to cached texture from config.");
+            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin kept from cached texture in config.");
         } else {
             SkinFetcher.SkinData textures = SkinFetcher.fetchTexturesByNickname(value);
             if (textures == null) {
@@ -195,10 +195,8 @@ public class UnknownCommand {
                 return 0;
             }
 
-            config.anonymous.skin.nickname = value;
             config.anonymous.skin.texture = textures.value;
             config.anonymous.skin.signature = textures.signature;
-            config.anonymous.skin.type = "nickname";
             DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin resolved from nickname " + value + ".");
         }
 

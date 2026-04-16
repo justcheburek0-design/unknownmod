@@ -1,6 +1,7 @@
 # gradle
 
 .gradle/
+.gradle-user/
 build/
 out/
 classes/
@@ -42,6 +43,8 @@ replay_*.log
 
 # Ignore Gradle project-specific cache directory
 .gradle
+.gradle-user
 
 # Ignore Gradle build output directory
 build
+

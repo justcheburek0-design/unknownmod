@@ -30,7 +30,7 @@ public final class ProfileApplier {
     }
 
     public static GameProfile getOriginalProfile(UUID uuid) {
-        return IdentityStore.get(uuid).map(ProfileApplier::enrichOriginalProfile).orElse(null);
+        return IdentityStore.get(uuid).orElse(null);
     }
 
     public static String getDisplayName(MinecraftServer server, ServerPlayerEntity player) {
@@ -178,14 +178,9 @@ public final class ProfileApplier {
             }
         }
 
-        if (texturesProp == null) {
-            for (var entry : baseProfile.properties().entries()) {
-                if ("textures".equals(entry.getKey())) {
-                    multimap.put(entry.getKey(), entry.getValue());
-                }
-            }
+        if (texturesProp != null) {
+            multimap.put("textures", texturesProp);
         }
-
         ((GameProfileAccessor) (Object) newProfile).setProperties(new PropertyMap(multimap));
         ((PlayerEntityAccessor) player).setGameProfile(newProfile);
     }
@@ -196,54 +191,11 @@ public final class ProfileApplier {
         }
 
         UnknownConfig.SkinSettings skin = config.anonymous.skin;
-        String type = skin.type == null ? "" : skin.type;
-
-        if ("texture".equalsIgnoreCase(type)) {
-            if (skin.texture != null && !skin.texture.isBlank() && skin.signature != null && !skin.signature.isBlank()) {
-                return new Property("textures", skin.texture, skin.signature);
-            }
-            return null;
-        }
-
-        if (("skin".equalsIgnoreCase(type) || "nickname".equalsIgnoreCase(type)) && skin.nickname != null && !skin.nickname.isBlank()) {
-            SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(skin.nickname);
-            if (data != null) {
-                return new Property("textures", data.value, data.signature);
-            }
-            if (skin.texture != null && !skin.texture.isBlank() && skin.signature != null && !skin.signature.isBlank()) {
-                return new Property("textures", skin.texture, skin.signature);
-            }
+        if (skin.texture != null && !skin.texture.isBlank()
+                && skin.signature != null && !skin.signature.isBlank()) {
+            return new Property("textures", skin.texture, skin.signature);
         }
 
         return null;
-    }
-
-    private static GameProfile enrichOriginalProfile(GameProfile originalProfile) {
-        if (originalProfile == null) {
-            return null;
-        }
-
-        if (!originalProfile.properties().get("textures").isEmpty()) {
-            return originalProfile;
-        }
-
-        String nickname = originalProfile.name();
-        if (nickname == null || nickname.isBlank()) {
-            return originalProfile;
-        }
-
-        SkinFetcher.SkinData data = SkinFetcher.fetchTexturesByNickname(nickname);
-        if (data == null || data.value.isBlank() || data.signature.isBlank()) {
-            return originalProfile;
-        }
-
-        GameProfile refreshedProfile = new GameProfile(originalProfile.id(), originalProfile.name());
-        Multimap<String, Property> multimap = HashMultimap.create();
-        for (var entry : originalProfile.properties().entries()) {
-            multimap.put(entry.getKey(), entry.getValue());
-        }
-        multimap.put("textures", new Property("textures", data.value, data.signature));
-        ((GameProfileAccessor) (Object) refreshedProfile).setProperties(new PropertyMap(multimap));
-        return refreshedProfile;
     }
 }

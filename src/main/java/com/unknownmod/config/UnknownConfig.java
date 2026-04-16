@@ -8,6 +8,7 @@ public class UnknownConfig {
     public AnonymousSettings anonymous = new AnonymousSettings();
     public MessagesSettings messages = new MessagesSettings();
     public RevelationSettings revelation = new RevelationSettings();
+    public PlayerListSettings playerList = new PlayerListSettings();
     public DebugSettings debug = new DebugSettings();
 
     @ConfigSerializable
@@ -18,10 +19,8 @@ public class UnknownConfig {
 
     @ConfigSerializable
     public static class SkinSettings {
-        public String type = "texture";
         public String texture = "";
         public String signature = "";
-        public String nickname = "";
     }
 
     @ConfigSerializable
@@ -56,6 +55,12 @@ public class UnknownConfig {
     public static class DebugSettings {
         @Setting("enabled")
         public boolean enabled = false;
+    }
+
+    @ConfigSerializable
+    public static class PlayerListSettings {
+        @Setting("days")
+        public int days = 2;
     }
 
     @ConfigSerializable

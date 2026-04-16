@@ -1,6 +1,8 @@
 package com.unknownmod.mixin;
 
 import com.unknownmod.config.ConfigManager;
+import com.unknownmod.state.IdentityStore;
+import com.unknownmod.state.PlayerHistoryStateManager;
 import com.unknownmod.state.RevelationManager;
 import com.unknownmod.util.MessageFormatter;
 import com.unknownmod.util.AppearanceSyncManager;
@@ -39,6 +41,8 @@ public abstract class PlayerManagerMixin {
     @Inject(method = "onPlayerConnect", at = @At("TAIL"))
     private void unknownmod$sendJoinMessage(net.minecraft.network.ClientConnection connection, ServerPlayerEntity player, ConnectedClientData clientData, CallbackInfo ci) {
         RevelationManager.resumeRevealIfPaused(server, player.getUuid());
+        IdentityStore.getOriginalName(player.getUuid())
+                .ifPresent(name -> PlayerHistoryStateManager.getServerState(server).recordJoin(player.getUuid(), name, System.currentTimeMillis()));
         ProfileApplier.refreshPlayer(server, player);
         AppearanceSyncManager.queueViewerSync(player);
         broadcastCustomMessage(ConfigManager.getConfig().messages.joined, player);

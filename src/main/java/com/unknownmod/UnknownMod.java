@@ -1,6 +1,7 @@
 package com.unknownmod;
 
 import com.unknownmod.command.UnknownCommand;
+import com.unknownmod.command.PlayersCommand;
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.event.PlayerDeathHandler;
 import com.unknownmod.state.ServerContextHolder;
@@ -39,6 +40,7 @@ public class UnknownMod implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             UnknownCommand.register(dispatcher);
+            PlayersCommand.register(dispatcher);
         });
     }
 }

@@ -70,12 +70,6 @@ public abstract class ServerLoginNetworkHandlerMixin {
 
         if (texturesProp != null) {
             multimap.put("textures", texturesProp);
-        } else {
-            for (var entry : originalProfile.properties().entries()) {
-                if ("textures".equals(entry.getKey())) {
-                    multimap.put(entry.getKey(), entry.getValue());
-                }
-            }
         }
 
         PropertyMap newProps = new PropertyMap(multimap);

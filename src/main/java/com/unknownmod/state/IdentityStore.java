@@ -34,6 +34,15 @@ public final class IdentityStore {
         return profile == null ? Optional.empty() : Optional.of(copy(profile));
     }
 
+    public static Optional<String> getOriginalName(UUID uuid) {
+        GameProfile profile = ORIGINAL_PROFILES.get(uuid);
+        if (profile == null || profile.name() == null || profile.name().isBlank()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(profile.name());
+    }
+
     public static Optional<ServerPlayerEntity> findOnlinePlayerByOriginalName(MinecraftServer server, String name) {
         if (server == null || name == null || name.isBlank()) {
             return Optional.empty();

@@ -24,8 +24,6 @@ dependencies {
 
     modImplementation include("eu.pb4:placeholder-api:${project.placeholder_api_version}")
 
-    modImplementation include("eu.pb4:polymer-core:${project.polymer_version}")
-
     implementation("org.spongepowered:configurate-yaml:${project.configurate_version}")
     implementation("net.kyori:adventure-api:${project.adventure_version}")
     implementation("net.kyori:adventure-text-minimessage:${project.adventure_version}")
