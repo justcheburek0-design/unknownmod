@@ -180,14 +180,19 @@ public class UnknownCommand {
         }
 
         if ("texture".equalsIgnoreCase(value)) {
+            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin command requested cached texture mode.");
             if (config.anonymous.skin.texture == null || config.anonymous.skin.texture.isBlank()
                     || config.anonymous.skin.signature == null || config.anonymous.skin.signature.isBlank()) {
                 context.getSource().sendError(MessageFormatter.format("[UnknownMod] No cached texture/signature in config."));
+                DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin command failed: cached texture/signature is missing or blank.");
                 return 0;
             }
 
-            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin kept from cached texture in config.");
+            DebugMessenger.debug(context.getSource().getServer(),
+                    "Anonymous skin kept from cached texture in config; valueLen=" + config.anonymous.skin.texture.length()
+                            + ", signatureLen=" + config.anonymous.skin.signature.length() + ".");
         } else {
+            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin command resolving nickname '" + value + "'.");
             SkinFetcher.SkinData textures = SkinFetcher.fetchTexturesByNickname(value);
             if (textures == null) {
                 context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to resolve skin for: " + value));
@@ -197,12 +202,15 @@ public class UnknownCommand {
 
             config.anonymous.skin.texture = textures.value;
             config.anonymous.skin.signature = textures.signature;
-            DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin resolved from nickname " + value + ".");
+            DebugMessenger.debug(context.getSource().getServer(),
+                    "Anonymous skin resolved from nickname " + value + "; valueLen=" + textures.value.length()
+                            + ", signatureLen=" + textures.signature.length() + ".");
         }
 
         ConfigManager.save();
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
         context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Skin updated for all players."), false);
+        DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin config saved and online players refreshed.");
         return 1;
     }
 

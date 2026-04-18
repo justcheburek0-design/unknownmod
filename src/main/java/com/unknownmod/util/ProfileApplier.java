@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 
 public final class ProfileApplier {
+    private static final String LOG_PREFIX = "[profile]";
     private ProfileApplier() {
     }
 
@@ -141,20 +142,24 @@ public final class ProfileApplier {
 
     public static void applyCurrentProfile(MinecraftServer server, ServerPlayerEntity player, UnknownConfig config) {
         if (RevelationManager.isRevealed(server, player.getUuid())) {
+            DebugMessenger.debug(server, LOG_PREFIX + " applying original profile to revealed player " + player.getName().getString() + ".");
             applyOriginalProfile(player);
             return;
         }
 
+        DebugMessenger.debug(server, LOG_PREFIX + " applying anonymous profile to player " + player.getName().getString() + ".");
         applyAnonymousProfile(server, player, config);
     }
 
     public static boolean applyOriginalProfile(ServerPlayerEntity player) {
         GameProfile originalProfile = getOriginalProfile(player.getUuid());
         if (originalProfile == null) {
+            DebugMessenger.debug(null, LOG_PREFIX + " original profile not found for uuid " + player.getUuid() + ".");
             return false;
         }
 
         ((PlayerEntityAccessor) player).setGameProfile(originalProfile);
+        DebugMessenger.debug(null, LOG_PREFIX + " original profile restored for uuid " + player.getUuid() + " (" + originalProfile.name() + ").");
         return true;
     }
 
@@ -171,6 +176,14 @@ public final class ProfileApplier {
         GameProfile newProfile = new GameProfile(baseProfile.id(), anonymousName);
         Multimap<String, Property> multimap = HashMultimap.create();
         Property texturesProp = resolveTextures(config);
+        Property finalTextures = texturesProp != null ? texturesProp : getTextures(baseProfile);
+        DebugMessenger.debug(server, LOG_PREFIX + " building anonymous profile for " + player.getName().getString()
+                + "; baseName=" + baseProfile.name()
+                + ", anonymousName=" + anonymousName
+                + ", baseTextures=" + describeProfileTextures(baseProfile)
+                + ", resolvedTextures=" + describeProperty(texturesProp)
+                + ", finalTextures=" + describeProperty(finalTextures)
+                + ".");
 
         for (var entry : baseProfile.properties().entries()) {
             if (!"textures".equals(entry.getKey())) {
@@ -178,24 +191,77 @@ public final class ProfileApplier {
             }
         }
 
-        if (texturesProp != null) {
-            multimap.put("textures", texturesProp);
+        if (finalTextures != null) {
+            multimap.put("textures", finalTextures);
         }
         ((GameProfileAccessor) (Object) newProfile).setProperties(new PropertyMap(multimap));
         ((PlayerEntityAccessor) player).setGameProfile(newProfile);
+        DebugMessenger.debug(server, LOG_PREFIX + " anonymous profile applied to " + player.getName().getString() + " with texturesCount=" + multimap.get("textures").size() + ".");
+    }
+
+    public static boolean hasTextures(GameProfile profile) {
+        return getTextures(profile) != null;
+    }
+
+    public static Property getTextures(GameProfile profile) {
+        if (profile == null) {
+            return null;
+        }
+
+        return profile.properties().get("textures").stream().findFirst().orElse(null);
+    }
+
+    public static GameProfile copyWithTextures(GameProfile profile, Property textures) {
+        if (profile == null) {
+            return null;
+        }
+
+        GameProfile copy = new GameProfile(profile.id(), profile.name());
+        Multimap<String, Property> multimap = HashMultimap.create();
+        for (var entry : profile.properties().entries()) {
+            if (!"textures".equals(entry.getKey())) {
+                multimap.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        if (textures != null) {
+            multimap.put("textures", textures);
+        }
+
+        ((GameProfileAccessor) (Object) copy).setProperties(new PropertyMap(multimap));
+        return copy;
     }
 
     public static Property resolveTextures(UnknownConfig config) {
         if (config.anonymous == null || config.anonymous.skin == null) {
+            DebugMessenger.debug(null, LOG_PREFIX + " resolveTextures skipped: anonymous skin section missing.");
             return null;
         }
 
         UnknownConfig.SkinSettings skin = config.anonymous.skin;
         if (skin.texture != null && !skin.texture.isBlank()
                 && skin.signature != null && !skin.signature.isBlank()) {
+            DebugMessenger.debug(null, LOG_PREFIX + " resolveTextures succeeded; valueLen=" + skin.texture.length() + ", signatureLen=" + skin.signature.length() + ".");
             return new Property("textures", skin.texture, skin.signature);
         }
 
+        DebugMessenger.debug(null, LOG_PREFIX + " resolveTextures returned null; texturePresent=" + (skin.texture != null && !skin.texture.isBlank())
+                + ", signaturePresent=" + (skin.signature != null && !skin.signature.isBlank()) + ".");
         return null;
+    }
+
+    private static String describeProfileTextures(GameProfile profile) {
+        return describeProperty(getTextures(profile));
+    }
+
+    private static String describeProperty(Property property) {
+        if (property == null) {
+            return "absent";
+        }
+
+        String value = property.value();
+        String signature = property.signature();
+        return "present(valueLen=" + (value == null ? 0 : value.length())
+                + ", signatureLen=" + (signature == null ? 0 : signature.length()) + ")";
     }
 }

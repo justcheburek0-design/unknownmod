@@ -1,6 +1,8 @@
 package com.unknownmod.mixin.client;
 
 import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
+import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.mixin.PlayerEntityAccessor;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -38,8 +40,9 @@ public abstract class ClientPlayNetworkHandlerMixin {
             }
 
             GameProfile incomingProfile = packetEntry.profile();
-            if (needsRefresh(listEntry.getProfile(), incomingProfile)) {
-                ((PlayerListEntryAccessor) listEntry).setProfile(incomingProfile);
+            GameProfile mergedProfile = mergePreservingTextures(listEntry.getProfile(), incomingProfile);
+            if (needsRefresh(listEntry.getProfile(), mergedProfile)) {
+                ((PlayerListEntryAccessor) listEntry).setProfile(mergedProfile);
                 ((PlayerListEntryAccessor) listEntry).setTexturesSupplier(null);
             }
         }
@@ -50,11 +53,24 @@ public abstract class ClientPlayNetworkHandlerMixin {
                 continue;
             }
 
-            GameProfile incomingProfile = listEntry.getProfile();
+            GameProfile incomingProfile = mergePreservingTextures(player.getGameProfile(), listEntry.getProfile());
             if (needsRefresh(player.getGameProfile(), incomingProfile)) {
                 ((PlayerEntityAccessor) (Object) player).setGameProfile(incomingProfile);
             }
         }
+    }
+
+    private static GameProfile mergePreservingTextures(GameProfile currentProfile, GameProfile incomingProfile) {
+        if (incomingProfile == null) {
+            return null;
+        }
+
+        Property currentTextures = ProfileApplier.getTextures(currentProfile);
+        if (currentTextures == null || ProfileApplier.hasTextures(incomingProfile)) {
+            return incomingProfile;
+        }
+
+        return ProfileApplier.copyWithTextures(incomingProfile, currentTextures);
     }
 
     private static boolean needsRefresh(GameProfile currentProfile, GameProfile incomingProfile) {

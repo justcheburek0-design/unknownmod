@@ -1,7 +1,9 @@
 package com.unknownmod.mixin.client;
 
 import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
 import com.unknownmod.mixin.PlayerEntityAccessor;
+import com.unknownmod.util.ProfileApplier;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.MinecraftClient;
@@ -41,11 +43,25 @@ public abstract class AbstractClientPlayerEntityMixin {
 
     private void syncPlayerProfile(GameProfile incomingProfile) {
         GameProfile currentProfile = ((AbstractClientPlayerEntity) (Object) this).getGameProfile();
-        if (!needsRefresh(currentProfile, incomingProfile)) {
+        GameProfile mergedProfile = mergePreservingTextures(currentProfile, incomingProfile);
+        if (!needsRefresh(currentProfile, mergedProfile)) {
             return;
         }
 
-        ((PlayerEntityAccessor) (Object) this).setGameProfile(incomingProfile);
+        ((PlayerEntityAccessor) (Object) this).setGameProfile(mergedProfile);
+    }
+
+    private static GameProfile mergePreservingTextures(GameProfile currentProfile, GameProfile incomingProfile) {
+        if (incomingProfile == null) {
+            return null;
+        }
+
+        Property currentTextures = ProfileApplier.getTextures(currentProfile);
+        if (currentTextures == null || ProfileApplier.hasTextures(incomingProfile)) {
+            return incomingProfile;
+        }
+
+        return ProfileApplier.copyWithTextures(incomingProfile, currentTextures);
     }
 
     private static boolean needsRefresh(GameProfile currentProfile, GameProfile incomingProfile) {
