@@ -3,19 +3,19 @@ package com.unknownmod.mixin.client;
 import com.mojang.authlib.GameProfile;
 import net.fabricmc.api.Environment;
 import net.fabricmc.api.EnvType;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.entity.player.SkinTextures;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.world.entity.player.PlayerSkin;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Environment(EnvType.CLIENT)
-@Mixin(PlayerListEntry.class)
+@Mixin(PlayerInfo.class)
 public interface PlayerListEntryAccessor {
     @Mutable
     @Accessor("profile")
     void setProfile(GameProfile profile);
 
     @Accessor("texturesSupplier")
-    void setTexturesSupplier(java.util.function.Supplier<SkinTextures> texturesSupplier);
+    void setTexturesSupplier(java.util.function.Supplier<PlayerSkin> texturesSupplier);
 }

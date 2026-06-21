@@ -3,14 +3,14 @@ package com.unknownmod.worldgen;
 import com.unknownmod.util.DebugMessenger;
 import com.unknownmod.worldgen.ChunkWorldgenManager.FillMode;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
-import net.minecraft.block.BlockState;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.random.Random;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.ChunkSection;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.Optional;
 
@@ -22,13 +22,13 @@ public final class ChunkOverrideGenerator {
         ServerChunkEvents.CHUNK_GENERATE.register(ChunkOverrideGenerator::onChunkGenerate);
     }
 
-    private static void onChunkGenerate(ServerWorld world, WorldChunk chunk) {
-        if (!World.OVERWORLD.equals(world.getRegistryKey())) {
+    private static void onChunkGenerate(ServerLevel world, LevelChunk chunk) {
+        if (!Level.OVERWORLD.equals(world.dimension())) {
             return;
         }
 
         ChunkWorldgenManager.CompiledChunkWorldgenConfig config = ChunkWorldgenManager.getCompiled();
-        Random random = seedRandom(world, chunk.getPos());
+        RandomSource random = seedRandom(world, chunk.getPos());
         FillMode mode = config.pickMode(random);
         if (mode == FillMode.NONE) {
             return;
@@ -49,15 +49,15 @@ public final class ChunkOverrideGenerator {
         if (server == null) {
             return;
         }
-        DebugMessenger.debug(server, "Applied " + mode.name().toLowerCase() + " worldgen override '" + override.name() + "' to chunk " + chunk.getPos().x + ", " + chunk.getPos().z + ".");
+        DebugMessenger.debug(server, "Applied " + mode.name().toLowerCase() + " worldgen override '" + override.name() + "' to chunk " + chunk.getPos().x() + ", " + chunk.getPos().z() + ".");
     }
 
-    private static void applyFullOverride(ServerWorld world, WorldChunk chunk, ChunkWorldgenManager.CompiledChunkOverride override, Random random) {
-        int minY = world.getDimension().minY();
-        ChunkSection[] sections = chunk.getSectionArray();
+    private static void applyFullOverride(ServerLevel world, LevelChunk chunk, ChunkWorldgenManager.CompiledChunkOverride override, RandomSource random) {
+        int minY = world.getMinY();
+        LevelChunkSection[] sections = chunk.getSections();
 
         for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
-            ChunkSection section = sections[sectionIndex];
+            LevelChunkSection section = sections[sectionIndex];
             if (section == null) {
                 continue;
             }
@@ -65,7 +65,7 @@ public final class ChunkOverrideGenerator {
             int sectionY = minY + (sectionIndex << 4);
             for (int localY = 0; localY < 16; localY++) {
                 int worldY = sectionY + localY;
-                if (worldY < minY || worldY >= minY + world.getDimension().height()) {
+                if (worldY < minY || worldY >= minY + world.getHeight()) {
                     continue;
                 }
 
@@ -82,29 +82,29 @@ public final class ChunkOverrideGenerator {
             }
         }
 
-        chunk.markNeedsSaving();
+        chunk.markUnsaved();
     }
 
     private static void applyPartialOverride(
-            ServerWorld world,
-            WorldChunk chunk,
+            ServerLevel world,
+            LevelChunk chunk,
             ChunkWorldgenManager.CompiledChunkOverride override,
-            Random random,
+            RandomSource random,
             ChunkWorldgenManager.CompiledChunkWorldgenConfig config
     ) {
-        int minY = world.getDimension().minY();
-        ChunkSection[] sections = chunk.getSectionArray();
+        int minY = world.getMinY();
+        LevelChunkSection[] sections = chunk.getSections();
 
         for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
-            ChunkSection section = sections[sectionIndex];
-            if (section == null || section.isEmpty()) {
+            LevelChunkSection section = sections[sectionIndex];
+            if (section == null || section.hasOnlyAir()) {
                 continue;
             }
 
             int sectionY = minY + (sectionIndex << 4);
             for (int localY = 0; localY < 16; localY++) {
                 int worldY = sectionY + localY;
-                if (worldY < minY || worldY >= minY + world.getDimension().height()) {
+                if (worldY < minY || worldY >= minY + world.getHeight()) {
                     continue;
                 }
 
@@ -126,14 +126,14 @@ public final class ChunkOverrideGenerator {
             }
         }
 
-        chunk.markNeedsSaving();
+        chunk.markUnsaved();
     }
 
-    private static Random seedRandom(ServerWorld world, ChunkPos pos) {
+    private static RandomSource seedRandom(ServerLevel world, ChunkPos pos) {
         long seed = world.getSeed();
         long mixedSeed = seed
-                ^ ((long) pos.x * 341873128712L)
-                ^ ((long) pos.z * 132897987541L);
-        return Random.create(mixedSeed);
+                ^ ((long) pos.x() * 341873128712L)
+                ^ ((long) pos.z() * 132897987541L);
+        return RandomSource.create(mixedSeed);
     }
 }

@@ -3,9 +3,11 @@ package com.unknownmod.util;
 import com.unknownmod.UnknownMod;
 import com.unknownmod.config.ConfigManager;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.PlayerConfigEntry;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.server.players.NameAndId;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+
 
 public final class DebugMessenger {
     private static final String PREFIX = "[UnknownMod][Debug] ";
@@ -33,10 +35,10 @@ public final class DebugMessenger {
             return;
         }
 
-        Text text = Text.literal(PREFIX + message);
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (server.getPlayerManager().isOperator(new PlayerConfigEntry(player.getGameProfile()))) {
-                player.sendMessage(text, false);
+        Component text = Component.literal(PREFIX + message);
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (server.getPlayerList().isOp(new NameAndId(player.getGameProfile()))) {
+                player.sendSystemMessage(text);
             }
         }
     }

@@ -6,7 +6,7 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -43,13 +43,13 @@ public final class IdentityStore {
         return Optional.of(profile.name());
     }
 
-    public static Optional<ServerPlayerEntity> findOnlinePlayerByOriginalName(MinecraftServer server, String name) {
+    public static Optional<ServerPlayer> findOnlinePlayerByOriginalName(MinecraftServer server, String name) {
         if (server == null || name == null || name.isBlank()) {
             return Optional.empty();
         }
 
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            GameProfile profile = ORIGINAL_PROFILES.get(player.getUuid());
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            GameProfile profile = ORIGINAL_PROFILES.get(player.getUUID());
             String originalName = profile == null ? player.getGameProfile().name() : profile.name();
             if (originalName != null && originalName.equalsIgnoreCase(name)) {
                 return Optional.of(player);
@@ -65,8 +65,8 @@ public final class IdentityStore {
             return names;
         }
 
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            GameProfile profile = ORIGINAL_PROFILES.get(player.getUuid());
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            GameProfile profile = ORIGINAL_PROFILES.get(player.getUUID());
             String originalName = profile == null ? player.getGameProfile().name() : profile.name();
             if (originalName != null && !originalName.isBlank()) {
                 names.add(originalName);

@@ -7,16 +7,16 @@ import com.unknownmod.util.DebugMessenger;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.LightningEntity;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.item.ItemStack;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.LightningBolt;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,8 +40,8 @@ public class PlayerDeathHandler {
         });
     }
 
-    private static void handleDirectKill(ServerWorld world, Entity entity, LivingEntity killedEntity, DamageSource damageSource) {
-        if (!(entity instanceof ServerPlayerEntity killer) || !(killedEntity instanceof ServerPlayerEntity victim)) {
+    private static void handleDirectKill(ServerLevel world, Entity entity, LivingEntity killedEntity, DamageSource damageSource) {
+        if (!(entity instanceof ServerPlayer killer) || !(killedEntity instanceof ServerPlayer victim)) {
             return;
         }
 
@@ -54,24 +54,24 @@ public class PlayerDeathHandler {
     }
 
     private static void trackDamage(LivingEntity entity, DamageSource damageSource, float dealtDamage, float takenDamage, boolean blocked) {
-        if (!(entity instanceof ServerPlayerEntity victim)) {
+        if (!(entity instanceof ServerPlayer victim)) {
             return;
         }
 
-        ServerPlayerEntity player = resolvePlayerParticipant(damageSource);
+        ServerPlayer player = resolvePlayerParticipant(damageSource);
         if (player == null) {
             return;
         }
 
-        recentPlayerParticipation.put(victim.getUuid(), new PlayerParticipation(
-                player.getUuid(),
+        recentPlayerParticipation.put(victim.getUUID(), new PlayerParticipation(
+                player.getUUID(),
                 player.getName().getString(),
                 System.currentTimeMillis()
         ));
     }
 
     private static void handleDeath(LivingEntity entity, DamageSource damageSource) {
-        if (!(entity instanceof ServerPlayerEntity victim)) {
+        if (!(entity instanceof ServerPlayer victim)) {
             return;
         }
 
@@ -83,8 +83,8 @@ public class PlayerDeathHandler {
         processDeath(server, victim, resolvePlayerParticipant(damageSource), damageSource);
     }
 
-    private static void processDeath(MinecraftServer server, ServerPlayerEntity victim, ServerPlayerEntity directParticipant, DamageSource damageSource) {
-        UUID victimUuid = victim.getUuid();
+    private static void processDeath(MinecraftServer server, ServerPlayer victim, ServerPlayer directParticipant, DamageSource damageSource) {
+        UUID victimUuid = victim.getUUID();
         if (!processedDeaths.add(victimUuid)) {
             return;
         }
@@ -107,7 +107,7 @@ public class PlayerDeathHandler {
         }
 
         if (!renamedWeaponKill && participation != null) {
-            ServerPlayerEntity participatingPlayer = server.getPlayerManager().getPlayer(participation.playerUuid());
+            ServerPlayer participatingPlayer = server.getPlayerList().getPlayer(participation.playerUuid());
             if (participatingPlayer != null) {
                 renamedWeaponKill = isRenamedWeaponKill(damageSource, participatingPlayer, victim);
             }
@@ -123,41 +123,41 @@ public class PlayerDeathHandler {
         summonCosmeticLightning(victim);
     }
 
-    private static ServerPlayerEntity resolvePlayerParticipant(DamageSource damageSource) {
-        Entity attacker = damageSource.getAttacker();
-        if (attacker instanceof ServerPlayerEntity killer) {
+    private static ServerPlayer resolvePlayerParticipant(DamageSource damageSource) {
+        Entity attacker = damageSource.getEntity();
+        if (attacker instanceof ServerPlayer killer) {
             return killer;
         }
 
-        Entity source = damageSource.getSource();
-        if (source instanceof ServerPlayerEntity killer) {
+        Entity source = damageSource.getEntity();
+        if (source instanceof ServerPlayer killer) {
             return killer;
         }
 
         return null;
     }
 
-    private static boolean isRenamedWeaponKill(DamageSource damageSource, ServerPlayerEntity killer, ServerPlayerEntity victim) {
-        ItemStack weapon = damageSource.getWeaponStack();
+    private static boolean isRenamedWeaponKill(DamageSource damageSource, ServerPlayer killer, ServerPlayer victim) {
+        ItemStack weapon = damageSource.getWeaponItem();
         if ((weapon == null || weapon.isEmpty()) && killer != null) {
-            weapon = killer.getMainHandStack();
+            weapon = killer.getMainHandItem();
         }
 
-        if (weapon == null || weapon.isEmpty() || !weapon.contains(DataComponentTypes.CUSTOM_NAME)) {
+        if (weapon == null || weapon.isEmpty() || !weapon.has(DataComponents.CUSTOM_NAME)) {
             return false;
         }
 
-        String weaponName = normalizeKillName(weapon.getName().getString());
+        String weaponName = normalizeKillName(weapon.getHoverName().getString());
         String victimName = normalizeKillName(getOriginalPlayerName(victim));
         return !weaponName.isEmpty() && !victimName.isEmpty() && weaponName.equalsIgnoreCase(victimName);
     }
 
-    private static String getOriginalPlayerName(ServerPlayerEntity player) {
+    private static String getOriginalPlayerName(ServerPlayer player) {
         if (player == null) {
             return "";
         }
 
-        return IdentityStore.get(player.getUuid())
+        return IdentityStore.get(player.getUUID())
                 .map(profile -> profile.name())
                 .filter(name -> name != null && !name.isBlank())
                 .orElseGet(() -> player.getGameProfile().name() == null ? "" : player.getGameProfile().name());
@@ -180,16 +180,16 @@ public class PlayerDeathHandler {
         return normalized;
     }
 
-    private static void summonCosmeticLightning(ServerPlayerEntity victim) {
-        ServerWorld world = victim.getEntityWorld();
+    private static void summonCosmeticLightning(ServerPlayer victim) {
+        ServerLevel world = (ServerLevel) victim.level();
         if (world == null) {
             return;
         }
 
-        LightningEntity lightning = new LightningEntity(EntityType.LIGHTNING_BOLT, world);
-        lightning.setCosmetic(true);
-        lightning.refreshPositionAndAngles(victim.getX(), victim.getY(), victim.getZ(), 0.0f, 0.0f);
-        world.spawnEntity(lightning);
+        LightningBolt lightning = new LightningBolt(EntityType.LIGHTNING_BOLT, world);
+        lightning.setVisualOnly(true);
+        lightning.setPos(victim.getX(), victim.getY(), victim.getZ());
+        world.addFreshEntity(lightning);
     }
 
     private static void pruneParticipation(long now) {

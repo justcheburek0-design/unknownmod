@@ -15,103 +15,103 @@ import com.unknownmod.util.MessageFormatter;
 import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.util.SkinFetcher;
 import com.unknownmod.worldgen.ChunkWorldgenManager;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 public class UnknownCommand {
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("unknown")
-                .requires(CommandManager.requirePermissionLevel(CommandManager.GAMEMASTERS_CHECK))
-                .then(CommandManager.literal("reload")
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("unknown")
+                .requires(source -> Commands.LEVEL_GAMEMASTERS.check(source.permissions()))
+                .then(Commands.literal("reload")
                         .executes(UnknownCommand::executeReload)
                 )
-                .then(CommandManager.literal("worldgen")
-                        .then(CommandManager.literal("reload")
+                .then(Commands.literal("worldgen")
+                        .then(Commands.literal("reload")
                                 .executes(UnknownCommand::executeWorldgenReload)
                         )
-                        .then(CommandManager.literal("status")
+                        .then(Commands.literal("status")
                                 .executes(UnknownCommand::executeWorldgenStatus)
                         )
                 )
-                .then(CommandManager.literal("debug")
+                .then(Commands.literal("debug")
                         .executes(UnknownCommand::executeDebugToggle)
                 )
-                .then(CommandManager.literal("nickname")
-                        .then(CommandManager.argument("value", StringArgumentType.string())
+                .then(Commands.literal("nickname")
+                        .then(Commands.argument("value", StringArgumentType.string())
                                 .executes(UnknownCommand::executeSetNickname)
                         )
                 )
-                .then(CommandManager.literal("ghost")
-                        .then(CommandManager.argument("target", StringArgumentType.word())
+                .then(Commands.literal("ghost")
+                        .then(Commands.argument("target", StringArgumentType.word())
                                 .suggests(UnknownCommand::suggestKnownPlayerNames)
                                 .executes(UnknownCommand::executeGhostTarget)
                         )
                 )
-                .then(CommandManager.literal("skin")
-                        .then(CommandManager.argument("value", StringArgumentType.string())
+                .then(Commands.literal("skin")
+                        .then(Commands.argument("value", StringArgumentType.string())
                                 .executes(UnknownCommand::executeSetSkin)
                         )
                 )
-                .then(CommandManager.literal("reveal")
-                        .then(CommandManager.literal("player")
-                                .then(CommandManager.argument("target", StringArgumentType.word())
+                .then(Commands.literal("reveal")
+                        .then(Commands.literal("player")
+                                .then(Commands.argument("target", StringArgumentType.word())
                                         .suggests(UnknownCommand::suggestKnownPlayerNames)
                                         .executes(UnknownCommand::executeRevealTarget)
                                 )
                                 .executes(UnknownCommand::executeRevealRandom)
                         )
-                        .then(CommandManager.literal("cancel")
+                        .then(Commands.literal("cancel")
                                 .executes(UnknownCommand::executeRevealCancel)
-                                .then(CommandManager.argument("target", StringArgumentType.word())
+                                .then(Commands.argument("target", StringArgumentType.word())
                                         .suggests(UnknownCommand::suggestRevealedPlayerNames)
                                         .executes(UnknownCommand::executeRevealCancelTarget)
                                 )
                         )
-                        .then(CommandManager.literal("interval")
-                                .then(CommandManager.argument("hours", IntegerArgumentType.integer(1))
+                        .then(Commands.literal("interval")
+                                .then(Commands.argument("hours", IntegerArgumentType.integer(1))
                                         .executes(UnknownCommand::executeRevealInterval)
                                 )
                         )
-                        .then(CommandManager.literal("duration")
-                                .then(CommandManager.argument("minutes", IntegerArgumentType.integer(1))
+                        .then(Commands.literal("duration")
+                                .then(Commands.argument("minutes", IntegerArgumentType.integer(1))
                                         .executes(UnknownCommand::executeRevealDuration)
                                 )
                         )
-                        .then(CommandManager.literal("minplayers")
-                                .then(CommandManager.argument("n", IntegerArgumentType.integer(0))
+                        .then(Commands.literal("minplayers")
+                                .then(Commands.argument("n", IntegerArgumentType.integer(0))
                                         .executes(UnknownCommand::executeRevealMinPlayers)
                                 )
                         )
-                        .then(CommandManager.literal("status")
+                        .then(Commands.literal("status")
                                 .executes(UnknownCommand::executeRevealStatus)
                         )
                 )
         );
     }
 
-    private static int executeReload(CommandContext<ServerCommandSource> context) {
+    private static int executeReload(CommandContext<CommandSourceStack> context) {
         ConfigManager.load();
         ChunkWorldgenManager.load();
         RevelationManager.onConfigChanged(context.getSource().getServer());
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Config and worldgen config reloaded."), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Config and worldgen config reloaded."), false);
         DebugMessenger.debug(context.getSource().getServer(), "Config reloaded from /unknown reload.");
         return 1;
     }
 
-    private static int executeWorldgenReload(CommandContext<ServerCommandSource> context) {
+    private static int executeWorldgenReload(CommandContext<CommandSourceStack> context) {
         ChunkWorldgenManager.load();
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Worldgen config reloaded."), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Worldgen config reloaded."), false);
         DebugMessenger.debug(context.getSource().getServer(), "Worldgen config reloaded from /unknown worldgen reload.");
         return 1;
     }
 
-    private static int executeWorldgenStatus(CommandContext<ServerCommandSource> context) {
+    private static int executeWorldgenStatus(CommandContext<CommandSourceStack> context) {
         var config = ChunkWorldgenManager.getConfig();
-        context.getSource().sendFeedback(() -> MessageFormatter.format(
+        context.getSource().sendSuccess(() -> MessageFormatter.format(
                 "[UnknownMod] Worldgen full chance: " + config.chance
                         + ", partial chance: " + config.partialChance
                         + ", overrides: " + config.overrides.size()
@@ -121,7 +121,7 @@ public class UnknownCommand {
         return 1;
     }
 
-    private static int executeDebugToggle(CommandContext<ServerCommandSource> context) {
+    private static int executeDebugToggle(CommandContext<CommandSourceStack> context) {
         UnknownConfig config = ConfigManager.getConfig();
         config.debug.enabled = !config.debug.enabled;
         ConfigManager.save();
@@ -129,47 +129,47 @@ public class UnknownCommand {
         MinecraftServer server = context.getSource().getServer();
         String state = config.debug.enabled ? "enabled" : "disabled";
         DebugMessenger.announce(server, "Debug mode " + state + ".");
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Debug mode " + state + "."), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Debug mode " + state + "."), false);
         return 1;
     }
 
-    private static int executeSetNickname(CommandContext<ServerCommandSource> context) {
+    private static int executeSetNickname(CommandContext<CommandSourceStack> context) {
         String value = StringArgumentType.getString(context, "value");
         UnknownConfig config = ConfigManager.getConfig();
         config.anonymous.name = value;
         ConfigManager.save();
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Anonymous nickname set: " + value), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Anonymous nickname set: " + value), false);
         DebugMessenger.debug(context.getSource().getServer(), "Anonymous nickname updated to " + value + ".");
         return 1;
     }
 
-    private static int executeGhostTarget(CommandContext<ServerCommandSource> context) {
-        ServerPlayerEntity target = resolveTargetPlayer(context);
+    private static int executeGhostTarget(CommandContext<CommandSourceStack> context) {
+        ServerPlayer target = resolveTargetPlayer(context);
         if (target == null) {
             return 0;
         }
 
-        if (GhostStateManager.getServerState(context.getSource().getServer()).isGhost(target.getUuid())) {
+        if (GhostStateManager.getServerState(context.getSource().getServer()).isGhost(target.getUUID())) {
             if (!GhostStateManager.restoreGhost(context.getSource().getServer(), target)) {
-                context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to restore player: " + target.getName().getString()));
+                context.getSource().sendFailure(MessageFormatter.format("[UnknownMod] Failed to restore player: " + target.getName().getString()));
                 return 0;
             }
 
-            context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Player restored: " + target.getName().getString()), false);
+            context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Player restored: " + target.getName().getString()), false);
             return 1;
         }
 
         if (!GhostStateManager.makeGhost(context.getSource().getServer(), target)) {
-            context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to make player a ghost: " + target.getName().getString()));
+            context.getSource().sendFailure(MessageFormatter.format("[UnknownMod] Failed to make player a ghost: " + target.getName().getString()));
             return 0;
         }
 
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Player made ghost: " + target.getName().getString()), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Player made ghost: " + target.getName().getString()), false);
         return 1;
     }
 
-    private static int executeSetSkin(CommandContext<ServerCommandSource> context) {
+    private static int executeSetSkin(CommandContext<CommandSourceStack> context) {
         String value = StringArgumentType.getString(context, "value");
         UnknownConfig config = ConfigManager.getConfig();
         if (config.anonymous == null) {
@@ -183,7 +183,7 @@ public class UnknownCommand {
             DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin command requested cached texture mode.");
             if (config.anonymous.skin.texture == null || config.anonymous.skin.texture.isBlank()
                     || config.anonymous.skin.signature == null || config.anonymous.skin.signature.isBlank()) {
-                context.getSource().sendError(MessageFormatter.format("[UnknownMod] No cached texture/signature in config."));
+                context.getSource().sendFailure(MessageFormatter.format("[UnknownMod] No cached texture/signature in config."));
                 DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin command failed: cached texture/signature is missing or blank.");
                 return 0;
             }
@@ -195,7 +195,7 @@ public class UnknownCommand {
             DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin command resolving nickname '" + value + "'.");
             SkinFetcher.SkinData textures = SkinFetcher.fetchTexturesByNickname(value);
             if (textures == null) {
-                context.getSource().sendError(MessageFormatter.format("[UnknownMod] Failed to resolve skin for: " + value));
+                context.getSource().sendFailure(MessageFormatter.format("[UnknownMod] Failed to resolve skin for: " + value));
                 DebugMessenger.debug(context.getSource().getServer(), "Failed to resolve skin texture for nickname " + value + ".");
                 return 0;
             }
@@ -209,23 +209,23 @@ public class UnknownCommand {
 
         ConfigManager.save();
         ProfileApplier.refreshAllOnline(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Skin updated for all players."), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Skin updated for all players."), false);
         DebugMessenger.debug(context.getSource().getServer(), "Anonymous skin config saved and online players refreshed.");
         return 1;
     }
 
-    private static int executeRevealRandom(CommandContext<ServerCommandSource> context) {
-        ServerPlayerEntity target = RevelationManager.pickRandomEligiblePlayer(context.getSource().getServer());
+    private static int executeRevealRandom(CommandContext<CommandSourceStack> context) {
+        ServerPlayer target = RevelationManager.pickRandomEligiblePlayer(context.getSource().getServer());
         if (target == null) {
-            context.getSource().sendError(MessageFormatter.format(ConfigManager.getConfig().revelation.messages.notEnoughPlayers));
+            context.getSource().sendFailure(MessageFormatter.format(ConfigManager.getConfig().revelation.messages.notEnoughPlayers));
             return 0;
         }
 
         return executeReveal(context, target);
     }
 
-    private static int executeRevealTarget(CommandContext<ServerCommandSource> context) {
-        ServerPlayerEntity target = resolveTargetPlayer(context);
+    private static int executeRevealTarget(CommandContext<CommandSourceStack> context) {
+        ServerPlayer target = resolveTargetPlayer(context);
         if (target == null) {
             return 0;
         }
@@ -233,20 +233,20 @@ public class UnknownCommand {
         return executeReveal(context, target);
     }
 
-    private static ServerPlayerEntity resolveTargetPlayer(CommandContext<ServerCommandSource> context) {
+    private static ServerPlayer resolveTargetPlayer(CommandContext<CommandSourceStack> context) {
         String targetName = StringArgumentType.getString(context, "target");
-        ServerPlayerEntity target = IdentityStore.findOnlinePlayerByOriginalName(context.getSource().getServer(), targetName)
+        ServerPlayer target = IdentityStore.findOnlinePlayerByOriginalName(context.getSource().getServer(), targetName)
                 .orElse(null);
         if (target != null) {
             return target;
         }
 
-        context.getSource().sendError(MessageFormatter.format("[UnknownMod] Player not found: " + targetName));
+        context.getSource().sendFailure(MessageFormatter.format("[UnknownMod] Player not found: " + targetName));
         return null;
     }
 
     private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestKnownPlayerNames(
-            CommandContext<ServerCommandSource> context,
+            CommandContext<CommandSourceStack> context,
             SuggestionsBuilder builder
     ) {
         for (String name : IdentityStore.getKnownPlayerNames(context.getSource().getServer())) {
@@ -255,45 +255,45 @@ public class UnknownCommand {
         return builder.buildFuture();
     }
 
-    private static int executeReveal(CommandContext<ServerCommandSource> context, ServerPlayerEntity target) {
+    private static int executeReveal(CommandContext<CommandSourceStack> context, ServerPlayer target) {
         if (!RevelationManager.startManualReveal(context.getSource().getServer(), target)) {
-            context.getSource().sendError(MessageFormatter.format("[UnknownMod] Unable to start revelation."));
+            context.getSource().sendFailure(MessageFormatter.format("[UnknownMod] Unable to start revelation."));
             return 0;
         }
 
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Revelation started for " + target.getName().getString()), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Revelation started for " + target.getName().getString()), false);
         return 1;
     }
 
-    private static int executeRevealCancel(CommandContext<ServerCommandSource> context) {
+    private static int executeRevealCancel(CommandContext<CommandSourceStack> context) {
         if (!RevelationManager.cancelReveal(context.getSource().getServer())) {
-            context.getSource().sendError(MessageFormatter.format(ConfigManager.getConfig().revelation.messages.noActive));
+            context.getSource().sendFailure(MessageFormatter.format(ConfigManager.getConfig().revelation.messages.noActive));
             return 0;
         }
 
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Revelation cancelled."), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Revelation cancelled."), false);
         return 1;
     }
 
-    private static int executeRevealCancelTarget(CommandContext<ServerCommandSource> context) {
+    private static int executeRevealCancelTarget(CommandContext<CommandSourceStack> context) {
         String targetName = StringArgumentType.getString(context, "target");
         java.util.Optional<java.util.UUID> targetUuid = RevelationManager.findActiveRevealUuidByName(context.getSource().getServer(), targetName);
         if (targetUuid.isEmpty()) {
-            context.getSource().sendError(MessageFormatter.format("[UnknownMod] Revealed player not found: " + targetName));
+            context.getSource().sendFailure(MessageFormatter.format("[UnknownMod] Revealed player not found: " + targetName));
             return 0;
         }
 
         if (!RevelationManager.cancelReveal(context.getSource().getServer(), targetUuid.get())) {
-            context.getSource().sendError(MessageFormatter.format(ConfigManager.getConfig().revelation.messages.noActive));
+            context.getSource().sendFailure(MessageFormatter.format(ConfigManager.getConfig().revelation.messages.noActive));
             return 0;
         }
 
-        context.getSource().sendFeedback(() -> MessageFormatter.format("[UnknownMod] Revelation cancelled for " + targetName), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format("[UnknownMod] Revelation cancelled for " + targetName), false);
         return 1;
     }
 
     private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestRevealedPlayerNames(
-            CommandContext<ServerCommandSource> context,
+            CommandContext<CommandSourceStack> context,
             SuggestionsBuilder builder
     ) {
         for (String name : RevelationManager.getActiveRevealNames(context.getSource().getServer())) {
@@ -302,42 +302,42 @@ public class UnknownCommand {
         return builder.buildFuture();
     }
 
-    private static int executeRevealInterval(CommandContext<ServerCommandSource> context) {
+    private static int executeRevealInterval(CommandContext<CommandSourceStack> context) {
         int hours = IntegerArgumentType.getInteger(context, "hours");
         UnknownConfig config = ConfigManager.getConfig();
         config.revelation.intervalHours = hours;
         ConfigManager.save();
         RevelationManager.onConfigChanged(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format(config.revelation.messages.intervalSet, "hours", hours), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format(config.revelation.messages.intervalSet, "hours", hours), false);
         DebugMessenger.debug(context.getSource().getServer(), "Revelation interval set to " + hours + " hours.");
         return 1;
     }
 
-    private static int executeRevealDuration(CommandContext<ServerCommandSource> context) {
+    private static int executeRevealDuration(CommandContext<CommandSourceStack> context) {
         int minutes = IntegerArgumentType.getInteger(context, "minutes");
         UnknownConfig config = ConfigManager.getConfig();
         config.revelation.durationMinutes = minutes;
         ConfigManager.save();
         RevelationManager.onConfigChanged(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format(config.revelation.messages.durationSet, "minutes", minutes), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format(config.revelation.messages.durationSet, "minutes", minutes), false);
         DebugMessenger.debug(context.getSource().getServer(), "Revelation duration set to " + minutes + " minutes.");
         return 1;
     }
 
-    private static int executeRevealMinPlayers(CommandContext<ServerCommandSource> context) {
+    private static int executeRevealMinPlayers(CommandContext<CommandSourceStack> context) {
         int n = IntegerArgumentType.getInteger(context, "n");
         UnknownConfig config = ConfigManager.getConfig();
         config.revelation.minPlayers = n;
         ConfigManager.save();
         RevelationManager.onConfigChanged(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format(config.revelation.messages.minPlayersSet, "n", n), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format(config.revelation.messages.minPlayersSet, "n", n), false);
         DebugMessenger.debug(context.getSource().getServer(), "Revelation minimum players set to " + n + ".");
         return 1;
     }
 
-    private static int executeRevealStatus(CommandContext<ServerCommandSource> context) {
+    private static int executeRevealStatus(CommandContext<CommandSourceStack> context) {
         String status = RevelationManager.getStatusLine(context.getSource().getServer());
-        context.getSource().sendFeedback(() -> MessageFormatter.format(status), false);
+        context.getSource().sendSuccess(() -> MessageFormatter.format(status), false);
         DebugMessenger.debug(context.getSource().getServer(), "Revelation status requested.");
         return 1;
     }

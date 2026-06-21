@@ -1,10 +1,11 @@
 package com.unknownmod.state;
 
+import net.minecraft.resources.Identifier;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateType;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -14,7 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-public class PlayerHistoryStateManager extends PersistentState {
+public class PlayerHistoryStateManager extends SavedData {
     private final Map<UUID, LastSeenEntry> entries;
 
     public static final Codec<PlayerHistoryStateManager> CODEC = RecordCodecBuilder.create(instance ->
@@ -23,8 +24,8 @@ public class PlayerHistoryStateManager extends PersistentState {
             ).apply(instance, PlayerHistoryStateManager::new)
     );
 
-    public static final PersistentStateType<PlayerHistoryStateManager> TYPE = new PersistentStateType<>(
-            "unknownmod_player_history",
+    public static final SavedDataType<PlayerHistoryStateManager> TYPE = new SavedDataType<>(
+            Identifier.parse("unknownmod_player_history"),
             PlayerHistoryStateManager::new,
             CODEC,
             null
@@ -50,7 +51,7 @@ public class PlayerHistoryStateManager extends PersistentState {
     }
 
     public static PlayerHistoryStateManager getServerState(MinecraftServer server) {
-        return server.getOverworld().getPersistentStateManager().getOrCreate(TYPE);
+        return server.overworld().getDataStorage().computeIfAbsent(TYPE);
     }
 
     public void recordJoin(UUID uuid, String originalName, long joinedAtMillis) {
@@ -59,7 +60,7 @@ public class PlayerHistoryStateManager extends PersistentState {
         }
 
         entries.put(uuid, new LastSeenEntry(uuid.toString(), originalName, joinedAtMillis));
-        markDirty();
+        setDirty();
     }
 
     public List<String> getRecentPlayerNames(long cutoffMillis) {

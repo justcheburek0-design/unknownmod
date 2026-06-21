@@ -9,8 +9,8 @@ import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.util.RevealGlowManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.MutableComponent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +37,7 @@ public final class RevelationManager {
         return server != null && isRevealed(server, uuid);
     }
 
-    public static boolean startManualReveal(MinecraftServer server, ServerPlayerEntity target) {
+    public static boolean startManualReveal(MinecraftServer server, ServerPlayer target) {
         return startReveal(server, target);
     }
 
@@ -157,15 +157,15 @@ public final class RevelationManager {
         return removeReveal(server, state, uuid, optionalEntry.get().getPlayerName(), false);
     }
 
-    public static boolean eliminateReveal(MinecraftServer server, ServerPlayerEntity victim, String killerName) {
+    public static boolean eliminateReveal(MinecraftServer server, ServerPlayer victim, String killerName) {
         UnknownConfig config = ConfigManager.getConfig();
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (!state.isRevealed(victim.getUuid())) {
+        if (!state.isRevealed(victim.getUUID())) {
             return false;
         }
 
         String playerName = victim.getName().getString();
-        removeReveal(server, state, victim.getUuid(), playerName, true);
+        removeReveal(server, state, victim.getUUID(), playerName, true);
         broadcast(server, MessageFormatter.format(
                 config.revelation.messages.eliminated,
                 "player", playerName,
@@ -175,8 +175,8 @@ public final class RevelationManager {
         return true;
     }
 
-    public static ServerPlayerEntity pickRandomEligiblePlayer(MinecraftServer server) {
-        List<ServerPlayerEntity> eligible = getEligiblePlayers(server);
+    public static ServerPlayer pickRandomEligiblePlayer(MinecraftServer server) {
+        List<ServerPlayer> eligible = getEligiblePlayers(server);
         if (eligible.isEmpty()) {
             return null;
         }
@@ -282,7 +282,7 @@ public final class RevelationManager {
                 continue;
             }
 
-            ServerPlayerEntity victim = server.getPlayerManager().getPlayer(uuid);
+            ServerPlayer victim = server.getPlayerList().getPlayer(uuid);
             if (victim == null) {
                 if (pauseRevealIfMatches(server, uuid)) {
                     stateChanged = true;
@@ -296,7 +296,7 @@ public final class RevelationManager {
                 continue;
             }
 
-            victim.sendMessage(MessageFormatter.format(config.revelation.messages.victimCountdown, "time", formatDuration(remaining)), true);
+            victim.sendSystemMessage(MessageFormatter.format(config.revelation.messages.victimCountdown, "time", formatDuration(remaining)), true);
         }
 
         if (!expiredReveals.isEmpty()) {
@@ -333,7 +333,7 @@ public final class RevelationManager {
             return;
         }
 
-        List<ServerPlayerEntity> eligible = getEligiblePlayers(server);
+        List<ServerPlayer> eligible = getEligiblePlayers(server);
         if (eligible.isEmpty()) {
             broadcast(server, MessageFormatter.format(config.revelation.messages.notEnoughPlayers));
             state.setNextRevealAtMillis(now + intervalMillis(config));
@@ -342,15 +342,15 @@ public final class RevelationManager {
             return;
         }
 
-        ServerPlayerEntity target = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
+        ServerPlayer target = eligible.get(ThreadLocalRandom.current().nextInt(eligible.size()));
         if (startReveal(server, target)) {
             state.setNextRevealAtMillis(now + intervalMillis(config));
             state.setWarningSent(false);
-            DebugMessenger.debug(server, "Random revelation started for " + target.getName().getString() + ".");
+            DebugMessenger.debug(server, "RandomSource revelation started for " + target.getName().getString() + ".");
         }
     }
 
-    private static boolean startReveal(MinecraftServer server, ServerPlayerEntity target) {
+    private static boolean startReveal(MinecraftServer server, ServerPlayer target) {
         UnknownConfig config = ConfigManager.getConfig();
         if (config.revelation == null || !config.revelation.enabled) {
             DebugMessenger.debug(server, "Reveal request rejected because feature is disabled.");
@@ -358,12 +358,12 @@ public final class RevelationManager {
         }
 
         RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (target == null || state.isRevealed(target.getUuid())) {
+        if (target == null || state.isRevealed(target.getUUID())) {
             DebugMessenger.debug(server, "Reveal request rejected because target is null or already revealed.");
             return false;
         }
 
-        if (GhostStateManager.getServerState(server).isGhost(target.getUuid())) {
+        if (GhostStateManager.getServerState(server).isGhost(target.getUUID())) {
             DebugMessenger.debug(server, "Reveal request rejected because target is a ghost: " + target.getName().getString() + ".");
             return false;
         }
@@ -374,7 +374,7 @@ public final class RevelationManager {
         }
 
         long now = System.currentTimeMillis();
-        state.setActiveReveal(target.getUuid(), target.getName().getString(), now + durationMillis(config));
+        state.setActiveReveal(target.getUUID(), target.getName().getString(), now + durationMillis(config));
         ProfileApplier.refreshAllOnline(server);
         queueViewerSyncAll(server);
 
@@ -456,12 +456,12 @@ public final class RevelationManager {
         return true;
     }
 
-    private static List<ServerPlayerEntity> getEligiblePlayers(MinecraftServer server) {
-        List<ServerPlayerEntity> players = new ArrayList<>();
+    private static List<ServerPlayer> getEligiblePlayers(MinecraftServer server) {
+        List<ServerPlayer> players = new ArrayList<>();
         RevelationStateManager state = RevelationStateManager.getServerState(server);
         GhostStateManager ghostState = GhostStateManager.getServerState(server);
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (!ghostState.isGhost(player.getUuid()) && !state.isRevealed(player.getUuid())) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (!ghostState.isGhost(player.getUUID()) && !state.isRevealed(player.getUUID())) {
                 players.add(player);
             }
         }
@@ -480,9 +480,9 @@ public final class RevelationManager {
         return Math.max(0, config.revelation.warningMinutes) * 60L * 1000L;
     }
 
-    private static void broadcast(MinecraftServer server, Text text) {
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            player.sendMessage(text, false);
+    private static void broadcast(MinecraftServer server, MutableComponent text) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            player.sendSystemMessage(text, false);
         }
     }
 
@@ -491,7 +491,7 @@ public final class RevelationManager {
             return;
         }
 
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             AppearanceSyncManager.queueViewerSync(player);
         }
     }

@@ -6,10 +6,10 @@ import com.unknownmod.mixin.PlayerEntityAccessor;
 import com.unknownmod.util.ProfileApplier;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -19,19 +19,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.Objects;
 
 @Environment(EnvType.CLIENT)
-@Mixin(AbstractClientPlayerEntity.class)
+@Mixin(net.minecraft.client.player.AbstractClientPlayer.class)
 public abstract class AbstractClientPlayerEntityMixin {
     @Shadow
-    private PlayerListEntry playerListEntry;
+    private PlayerInfo playerListEntry;
 
-    @Inject(method = "getPlayerListEntry", at = @At("RETURN"), cancellable = true)
-    private void unknownmod$refreshCachedEntry(CallbackInfoReturnable<PlayerListEntry> cir) {
-        ClientPlayNetworkHandler networkHandler = MinecraftClient.getInstance().getNetworkHandler();
+    @Inject(method = "getPlayerInfo", at = @At("RETURN"), cancellable = true)
+    private void unknownmod$refreshCachedEntry(CallbackInfoReturnable<PlayerInfo> cir) {
+        ClientPacketListener networkHandler = Minecraft.getInstance().getConnection();
         if (networkHandler == null) {
             return;
         }
 
-        PlayerListEntry currentEntry = networkHandler.getPlayerListEntry(((AbstractClientPlayerEntity) (Object) this).getUuid());
+        PlayerInfo currentEntry = Minecraft.getInstance().getConnection().getPlayerInfo(((AbstractClientPlayer) (Object) this).getUUID());
         if (currentEntry == null) {
             return;
         }
@@ -42,7 +42,7 @@ public abstract class AbstractClientPlayerEntityMixin {
     }
 
     private void syncPlayerProfile(GameProfile incomingProfile) {
-        GameProfile currentProfile = ((AbstractClientPlayerEntity) (Object) this).getGameProfile();
+        GameProfile currentProfile = ((AbstractClientPlayer) (Object) this).getGameProfile();
         GameProfile mergedProfile = mergePreservingTextures(currentProfile, incomingProfile);
         if (!needsRefresh(currentProfile, mergedProfile)) {
             return;

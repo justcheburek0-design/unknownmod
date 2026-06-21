@@ -6,9 +6,7 @@
   "mixins": [
     "PlayerManagerMixin",
     "PlayerManagerAccessor",
-    "ServerPlayNetworkHandlerMixin",
     "ServerLoginNetworkHandlerMixin",
-    "ServerCommonNetworkHandlerMixin",
     "PlayerEntityAccessor",
     "GameProfileAccessor",
     "PlayerListS2CPacketAccessor"

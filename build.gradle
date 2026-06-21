@@ -1,6 +1,6 @@
 plugins {
-    id 'fabric-loom' version "${loom_version}"
-	id 'maven-publish'
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    id 'maven-publish'
 }
 
 version = project.mod_version
@@ -16,13 +16,20 @@ repositories {
     mavenCentral()
 }
 
+loom {
+    mods {
+        "unknownmod" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-    modImplementation include("eu.pb4:placeholder-api:${project.placeholder_api_version}")
+    implementation "eu.pb4:placeholder-api:${project.placeholder_api_version}"
 
     implementation("org.spongepowered:configurate-yaml:${project.configurate_version}")
     implementation("net.kyori:adventure-api:${project.adventure_version}")
@@ -42,11 +49,10 @@ dependencies {
 }
 
 processResources {
-	inputs.property "version", project.version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": inputs.properties.version
-	}
+    inputs.property "version", project.version
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -55,30 +61,22 @@ tasks.withType(JavaCompile).configureEach {
 
 java {
     withSourcesJar()
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
 }
 
 jar {
     from("LICENSE") {
-        // Упрощенное обращение к имени архива
-        rename { "${it}_${project.archives_base_name}"}
+        rename { "${it}_${project.base.archivesName.get()}" }
     }
 }
-task dumpAuthlib {
-    doLast {
-        def cp = sourceSets.main.compileClasspath
-        def authlib = cp.find { it.name.contains('authlib') }
-        println "Authlib is: $authlib"
-        if (authlib) {
-            def cl = new java.net.URLClassLoader([authlib.toURI().toURL()] as java.net.URL[], null)
-            def clazz = cl.loadClass("com.mojang.authlib.GameProfile")
-            clazz.getDeclaredMethods().each { println "	$it" }
-            println "--- Fields ---"
-            clazz.getDeclaredFields().each { println "	$it" }
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
         }
+    }
+    repositories {
     }
 }

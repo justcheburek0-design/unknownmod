@@ -12,11 +12,13 @@ import com.unknownmod.mixin.PlayerEntityAccessor;
 import com.unknownmod.mixin.PlayerListS2CPacketAccessor;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
-import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.ChatFormatting;
 
 import java.util.List;
 import java.util.UUID;
@@ -34,12 +36,12 @@ public final class ProfileApplier {
         return IdentityStore.get(uuid).orElse(null);
     }
 
-    public static String getDisplayName(MinecraftServer server, ServerPlayerEntity player) {
+    public static String getDisplayName(MinecraftServer server, ServerPlayer player) {
         if (server == null || player == null) {
             return "";
         }
 
-        return getDisplayName(server, player.getUuid(), player.getName().getString());
+        return getDisplayName(server, player.getUUID(), player.getName().getString());
     }
 
     public static String getDisplayName(MinecraftServer server, UUID uuid, String fallbackName) {
@@ -57,18 +59,18 @@ public final class ProfileApplier {
         return fallbackName == null ? "" : fallbackName;
     }
 
-    public static boolean personalizePlayerListPacket(MinecraftServer server, PlayerListS2CPacket packet, UUID viewerUuid) {
-        List<PlayerListS2CPacket.Entry> originalEntries = packet.getEntries();
-        List<PlayerListS2CPacket.Entry> patchedEntries = new java.util.ArrayList<>(originalEntries.size());
+    public static boolean personalizePlayerListPacket(MinecraftServer server, ClientboundPlayerInfoUpdatePacket packet, UUID viewerUuid) {
+        List<ClientboundPlayerInfoUpdatePacket.Entry> originalEntries = packet.entries();
+        List<ClientboundPlayerInfoUpdatePacket.Entry> patchedEntries = new java.util.ArrayList<>(originalEntries.size());
         boolean changed = false;
 
-        for (PlayerListS2CPacket.Entry entry : originalEntries) {
-            Text displayName = entry.displayName();
+        for (ClientboundPlayerInfoUpdatePacket.Entry entry : originalEntries) {
+            Component displayName = entry.displayName();
             if (server != null && RevelationManager.isRevealed(server, entry.profileId())) {
-                ServerPlayerEntity revealedPlayer = server.getPlayerManager().getPlayer(entry.profileId());
+                ServerPlayer revealedPlayer = server.getPlayerList().getPlayer(entry.profileId());
                 String revealedName = revealedPlayer != null ? revealedPlayer.getName().getString() : entry.profile().name();
                 if (revealedName != null && !revealedName.isBlank()) {
-                    displayName = Text.literal(revealedName).formatted(Formatting.RED);
+                    displayName = Component.literal(revealedName);
                     changed = true;
                 }
             }
@@ -76,7 +78,7 @@ public final class ProfileApplier {
             if (viewerUuid.equals(entry.profileId())) {
                 GameProfile originalProfile = getOriginalProfile(viewerUuid);
                 if (originalProfile != null) {
-                    patchedEntries.add(new PlayerListS2CPacket.Entry(
+                    patchedEntries.add(new ClientboundPlayerInfoUpdatePacket.Entry(
                             entry.profileId(),
                             originalProfile,
                             entry.listed(),
@@ -93,7 +95,7 @@ public final class ProfileApplier {
             }
 
             if (displayName != entry.displayName()) {
-                patchedEntries.add(new PlayerListS2CPacket.Entry(
+                patchedEntries.add(new ClientboundPlayerInfoUpdatePacket.Entry(
                         entry.profileId(),
                         entry.profile(),
                         entry.listed(),
@@ -124,14 +126,14 @@ public final class ProfileApplier {
         }
 
         UnknownConfig config = ConfigManager.getConfig();
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             applyCurrentProfile(server, player, config);
         }
 
         AppearanceSyncManager.syncAllOnline(server);
     }
 
-    public static void refreshPlayer(MinecraftServer server, ServerPlayerEntity player) {
+    public static void refreshPlayer(MinecraftServer server, ServerPlayer player) {
         if (server == null || player == null) {
             return;
         }
@@ -140,8 +142,8 @@ public final class ProfileApplier {
         AppearanceSyncManager.syncPlayer(server, player);
     }
 
-    public static void applyCurrentProfile(MinecraftServer server, ServerPlayerEntity player, UnknownConfig config) {
-        if (RevelationManager.isRevealed(server, player.getUuid())) {
+    public static void applyCurrentProfile(MinecraftServer server, ServerPlayer player, UnknownConfig config) {
+        if (RevelationManager.isRevealed(server, player.getUUID())) {
             DebugMessenger.debug(server, LOG_PREFIX + " applying original profile to revealed player " + player.getName().getString() + ".");
             applyOriginalProfile(player);
             return;
@@ -151,22 +153,22 @@ public final class ProfileApplier {
         applyAnonymousProfile(server, player, config);
     }
 
-    public static boolean applyOriginalProfile(ServerPlayerEntity player) {
-        GameProfile originalProfile = getOriginalProfile(player.getUuid());
+    public static boolean applyOriginalProfile(ServerPlayer player) {
+        GameProfile originalProfile = getOriginalProfile(player.getUUID());
         if (originalProfile == null) {
-            DebugMessenger.debug(null, LOG_PREFIX + " original profile not found for uuid " + player.getUuid() + ".");
+            DebugMessenger.debug(null, LOG_PREFIX + " original profile not found for uuid " + player.getUUID() + ".");
             return false;
         }
 
         ((PlayerEntityAccessor) player).setGameProfile(originalProfile);
-        DebugMessenger.debug(null, LOG_PREFIX + " original profile restored for uuid " + player.getUuid() + " (" + originalProfile.name() + ").");
+        DebugMessenger.debug(null, LOG_PREFIX + " original profile restored for uuid " + player.getUUID() + " (" + originalProfile.name() + ").");
         return true;
     }
 
-    public static void applyAnonymousProfile(MinecraftServer server, ServerPlayerEntity player, UnknownConfig config) {
-        GameProfile baseProfile = getOriginalProfile(player.getUuid());
+    public static void applyAnonymousProfile(MinecraftServer server, ServerPlayer player, UnknownConfig config) {
+        GameProfile baseProfile = getOriginalProfile(player.getUUID());
         if (baseProfile == null) {
-            baseProfile = IdentityStore.get(player.getUuid()).orElse(player.getGameProfile());
+            baseProfile = IdentityStore.get(player.getUUID()).orElse(player.getGameProfile());
         }
         String anonymousName = baseProfile.name();
         if (config.anonymous != null && config.anonymous.name != null && !config.anonymous.name.isBlank()) {

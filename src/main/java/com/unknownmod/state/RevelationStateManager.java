@@ -1,10 +1,11 @@
 package com.unknownmod.state;
 
+import net.minecraft.resources.Identifier;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateType;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -13,7 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-public class RevelationStateManager extends PersistentState {
+public class RevelationStateManager extends SavedData {
     private final Map<UUID, RevealEntry> activeReveals;
     private long nextRevealAtMillis;
     private boolean warningSent;
@@ -29,8 +30,8 @@ public class RevelationStateManager extends PersistentState {
             ).apply(instance, RevelationStateManager::new)
     );
 
-    public static final PersistentStateType<RevelationStateManager> TYPE = new PersistentStateType<>(
-            "unknownmod_revelation",
+    public static final SavedDataType<RevelationStateManager> TYPE = new SavedDataType<>(
+            Identifier.parse("unknownmod_revelation"),
             RevelationStateManager::new,
             CODEC,
             null
@@ -73,7 +74,7 @@ public class RevelationStateManager extends PersistentState {
     }
 
     public static RevelationStateManager getServerState(MinecraftServer server) {
-        return server.getOverworld().getPersistentStateManager().getOrCreate(TYPE);
+        return server.overworld().getDataStorage().computeIfAbsent(TYPE);
     }
 
     public boolean hasActiveReveal() {
@@ -129,7 +130,7 @@ public class RevelationStateManager extends PersistentState {
 
     public void setNextRevealAtMillis(long nextRevealAtMillis) {
         this.nextRevealAtMillis = nextRevealAtMillis;
-        markDirty();
+        setDirty();
     }
 
     public void setRevealEndsAtMillis(long revealEndsAtMillis) {
@@ -138,12 +139,12 @@ public class RevelationStateManager extends PersistentState {
                 entry.setRevealEndsAtMillis(revealEndsAtMillis);
             }
         }
-        markDirty();
+        setDirty();
     }
 
     public void setWarningSent(boolean warningSent) {
         this.warningSent = warningSent;
-        markDirty();
+        setDirty();
     }
 
     public void setActiveReveal(UUID uuid, String playerName, long revealEndsAtMillis) {
@@ -153,7 +154,7 @@ public class RevelationStateManager extends PersistentState {
 
         RevealEntry entry = new RevealEntry(uuid.toString(), playerName, revealEndsAtMillis, 0L, false);
         activeReveals.put(uuid, entry);
-        markDirty();
+        setDirty();
     }
 
     public boolean pauseReveal(UUID uuid, long remainingMillis) {
@@ -163,7 +164,7 @@ public class RevelationStateManager extends PersistentState {
         }
 
         entry.pause(remainingMillis);
-        markDirty();
+        setDirty();
         return true;
     }
 
@@ -175,11 +176,11 @@ public class RevelationStateManager extends PersistentState {
 
         if (!entry.resume(now)) {
             activeReveals.remove(uuid);
-            markDirty();
+            setDirty();
             return false;
         }
 
-        markDirty();
+        setDirty();
         return true;
     }
 
@@ -190,7 +191,7 @@ public class RevelationStateManager extends PersistentState {
 
         RevealEntry removed = activeReveals.remove(uuid);
         if (removed != null) {
-            markDirty();
+            setDirty();
             return true;
         }
         return false;
@@ -202,13 +203,13 @@ public class RevelationStateManager extends PersistentState {
         }
 
         activeReveals.clear();
-        markDirty();
+        setDirty();
     }
 
     public void clearSchedule() {
         this.nextRevealAtMillis = 0L;
         this.warningSent = false;
-        markDirty();
+        setDirty();
     }
 
     private String getLegacyRevealedPlayerUuid() {

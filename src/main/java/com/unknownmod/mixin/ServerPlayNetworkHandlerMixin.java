@@ -1,19 +1,19 @@
 package com.unknownmod.mixin;
 
-import net.minecraft.server.PlayerManager;
-import net.minecraft.server.network.ServerPlayNetworkHandler;
-import net.minecraft.text.Text;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.server.network.ServerPlayerConnection;
+import net.minecraft.network.chat.MutableComponent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-@Mixin(ServerPlayNetworkHandler.class)
+@Mixin(net.minecraft.server.network.ServerPlayerConnection.class)
 public abstract class ServerPlayNetworkHandlerMixin {
 
     @Redirect(
             method = "cleanUp",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/PlayerManager;broadcast(Lnet/minecraft/text/Text;Z)V")
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/PlayerList;broadcast(Lnet/minecraft/text/MutableComponent;Z)V")
     )
-    private void unknownmod$skipVanillaLeaveBroadcast(PlayerManager instance, Text message, boolean overlay) {
+    private void unknownmod$skipVanillaLeaveBroadcast(PlayerList instance, MutableComponent message, boolean overlay) {
     }
 }

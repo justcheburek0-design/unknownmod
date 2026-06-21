@@ -6,8 +6,8 @@ import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
 import com.unknownmod.state.PlayerHistoryStateManager;
 import com.unknownmod.util.MessageFormatter;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.CommandSourceStack;
 
 import java.util.List;
 
@@ -17,30 +17,30 @@ public final class PlayersCommand {
     private PlayersCommand() {
     }
 
-    public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
-        dispatcher.register(CommandManager.literal("players")
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("players")
                 .executes(PlayersCommand::execute)
         );
     }
 
-    private static int execute(CommandContext<ServerCommandSource> context) {
+    private static int execute(CommandContext<CommandSourceStack> context) {
         int days = getConfiguredDays();
         long cutoffMillis = System.currentTimeMillis() - (days * MILLIS_PER_DAY);
         List<String> names = PlayerHistoryStateManager.getServerState(context.getSource().getServer()).getRecentPlayerNames(cutoffMillis);
 
         if (names.isEmpty()) {
-            context.getSource().sendFeedback(() -> MessageFormatter.format(
+            context.getSource().sendSuccess(() -> MessageFormatter.format(
                     "<gray>[UnknownMod]</gray> За последние <yellow>" + days + "</yellow> дн. никто не заходил."
             ), false);
             return 1;
         }
 
-        context.getSource().sendFeedback(() -> MessageFormatter.format(
+        context.getSource().sendSuccess(() -> MessageFormatter.format(
                 "<gray>[UnknownMod]</gray> Игроки, заходившие за последние <yellow>" + days + "</yellow> дн.:"
         ), false);
 
         for (String name : names) {
-            context.getSource().sendFeedback(() -> MessageFormatter.format("<white>- " + name + "</white>"), false);
+            context.getSource().sendSuccess(() -> MessageFormatter.format("<white>- " + name + "</white>"), false);
         }
 
         return names.size();

@@ -2,11 +2,11 @@ package com.unknownmod.worldgen;
 
 import com.unknownmod.UnknownMod;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.random.Random;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.RandomSource;
 import org.spongepowered.configurate.CommentedConfigurationNode;
 import org.spongepowered.configurate.yaml.NodeStyle;
 import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
@@ -179,12 +179,12 @@ public final class ChunkWorldgenManager {
 
     private static Optional<BlockState> resolveBlockState(String rawId) {
         Optional<Identifier> id = parseIdentifier(rawId);
-        if (id.isEmpty() || !Registries.BLOCK.containsId(id.get())) {
+        if (id.isEmpty() || !BuiltInRegistries.BLOCK.getOptional(id.get()).isPresent()) {
             return Optional.empty();
         }
 
-        Block block = Registries.BLOCK.get(id.get());
-        return Optional.of(block.getDefaultState());
+        Block block = BuiltInRegistries.BLOCK.getValue(id.get());;
+        return Optional.of(block.defaultBlockState());
     }
 
     private static Optional<Identifier> parseIdentifier(String rawId) {
@@ -197,7 +197,7 @@ public final class ChunkWorldgenManager {
                 return Optional.ofNullable(Identifier.tryParse(rawId));
             }
 
-            return Optional.of(Identifier.ofVanilla(rawId));
+            return Optional.of(Identifier.parse(rawId));
         } catch (Exception e) {
             return Optional.empty();
         }
@@ -360,7 +360,7 @@ public final class ChunkWorldgenManager {
             );
         }
 
-        public FillMode pickMode(Random random) {
+        public FillMode pickMode(RandomSource random) {
             if (!fullOverrides.isEmpty() && fullChance > 0 && random.nextInt(fullChance) == 0) {
                 return FillMode.FULL;
             }
@@ -372,7 +372,7 @@ public final class ChunkWorldgenManager {
             return FillMode.NONE;
         }
 
-        public Optional<CompiledChunkOverride> pickOverride(Random random, FillMode mode) {
+        public Optional<CompiledChunkOverride> pickOverride(RandomSource random, FillMode mode) {
             return switch (mode) {
                 case FULL -> fullOverrides.pick(random);
                 case PARTIAL -> partialOverrides.pick(random);
@@ -385,7 +385,7 @@ public final class ChunkWorldgenManager {
                 return true;
             }
 
-            String blockId = Registries.BLOCK.getId(state.getBlock()).toString().toLowerCase(Locale.ROOT);
+            String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString().toLowerCase(Locale.ROOT);
             for (String keyword : partialExclusions) {
                 if (keyword == null || keyword.isBlank()) {
                     continue;
@@ -462,7 +462,7 @@ public final class ChunkWorldgenManager {
             return new CompiledChunkOverride(name, null, blockPool);
         }
 
-        public Optional<BlockState> pickBlock(Random random) {
+        public Optional<BlockState> pickBlock(RandomSource random) {
             if (fixedState != null) {
                 return Optional.of(fixedState);
             }
@@ -520,7 +520,7 @@ public final class ChunkWorldgenManager {
             return entries.isEmpty() || totalWeight <= 0;
         }
 
-        private Optional<T> pick(Random random) {
+        private Optional<T> pick(RandomSource random) {
             if (isEmpty()) {
                 return Optional.empty();
             }

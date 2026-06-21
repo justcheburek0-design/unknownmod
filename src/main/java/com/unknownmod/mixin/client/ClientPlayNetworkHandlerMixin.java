@@ -6,11 +6,11 @@ import com.unknownmod.util.ProfileApplier;
 import com.unknownmod.mixin.PlayerEntityAccessor;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -21,20 +21,20 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Environment(EnvType.CLIENT)
-@Mixin(ClientPlayNetworkHandler.class)
+@Mixin(net.minecraft.client.multiplayer.ClientPacketListener.class)
 public abstract class ClientPlayNetworkHandlerMixin {
     @Shadow
-    public abstract PlayerListEntry getPlayerListEntry(UUID uuid);
+    public abstract PlayerInfo getPlayerListEntry(UUID uuid);
 
     @Inject(method = "onPlayerList", at = @At("TAIL"))
-    private void unknownmod$refreshPlayerCache(PlayerListS2CPacket packet, CallbackInfo ci) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null) {
+    private void unknownmod$refreshPlayerCache(ClientboundPlayerInfoUpdatePacket packet, CallbackInfo ci) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) {
             return;
         }
 
-        for (PlayerListS2CPacket.Entry packetEntry : packet.getEntries()) {
-            PlayerListEntry listEntry = getPlayerListEntry(packetEntry.profileId());
+        for (ClientboundPlayerInfoUpdatePacket.Entry packetEntry : packet.entries()) {
+            PlayerInfo listEntry = getPlayerListEntry(packetEntry.profileId());
             if (listEntry == null) {
                 continue;
             }
@@ -47,8 +47,8 @@ public abstract class ClientPlayNetworkHandlerMixin {
             }
         }
 
-        for (AbstractClientPlayerEntity player : client.world.getPlayers()) {
-            PlayerListEntry listEntry = getPlayerListEntry(player.getUuid());
+        for (AbstractClientPlayer player : client.level.players()) {
+            PlayerInfo listEntry = getPlayerListEntry(player.getUUID());
             if (listEntry == null) {
                 continue;
             }

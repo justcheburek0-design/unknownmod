@@ -2,12 +2,15 @@ package com.unknownmod.util;
 
 import com.unknownmod.mixin.PlayerManagerAccessor;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerRemoveS2CPacket;
-import net.minecraft.scoreboard.ServerScoreboard;
-import net.minecraft.scoreboard.Team;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+import net.minecraft.server.ServerScoreboard;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Team;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -33,10 +36,10 @@ public final class AppearanceSyncManager {
         }
 
         syncScoreboard(server);
-        refreshPlayerInfo(server, server.getPlayerManager().getPlayerList());
+        refreshPlayerInfo(server, server.getPlayerList().getPlayers());
     }
 
-    public static void syncPlayer(MinecraftServer server, ServerPlayerEntity player) {
+    public static void syncPlayer(MinecraftServer server, ServerPlayer player) {
         if (server == null || player == null) {
             return;
         }
@@ -45,19 +48,19 @@ public final class AppearanceSyncManager {
         refreshPlayerInfo(server, List.of(player));
     }
 
-    public static void syncViewer(MinecraftServer server, ServerPlayerEntity viewer) {
+    public static void syncViewer(MinecraftServer server, ServerPlayer viewer) {
         if (server == null || viewer == null) {
             return;
         }
 
         ServerScoreboard scoreboard = server.getScoreboard();
-        PlayerManagerAccessor playerManager = (PlayerManagerAccessor) server.getPlayerManager();
+        PlayerManagerAccessor playerManager = (PlayerManagerAccessor) server.getPlayerList();
         playerManager.unknownmod$sendScoreboard(scoreboard, viewer);
     }
 
-    public static void queueViewerSync(ServerPlayerEntity viewer) {
+    public static void queueViewerSync(ServerPlayer viewer) {
         if (viewer != null) {
-            PENDING_VIEWER_SYNC.add(viewer.getUuid());
+            PENDING_VIEWER_SYNC.add(viewer.getUUID());
         }
     }
 
@@ -65,32 +68,32 @@ public final class AppearanceSyncManager {
         RevealGlowManager.syncPlayerVisibility(server);
 
         ServerScoreboard scoreboard = server.getScoreboard();
-        Team hiddenTeam = scoreboard.getTeam(HIDDEN_TEAM_NAME);
-        Team revealTeam = scoreboard.getTeam(REVEAL_TEAM_NAME);
+        PlayerTeam hiddenTeam = scoreboard.getPlayerTeam(HIDDEN_TEAM_NAME);
+        PlayerTeam revealTeam = scoreboard.getPlayerTeam(REVEAL_TEAM_NAME);
         if (hiddenTeam != null) {
-            scoreboard.updateScoreboardTeamAndPlayers(hiddenTeam);
+            server.getPlayerList().broadcastAll(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(hiddenTeam, false));
         }
         if (revealTeam != null) {
-            scoreboard.updateScoreboardTeamAndPlayers(revealTeam);
+            server.getPlayerList().broadcastAll(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(revealTeam, false));
         }
 
-        PlayerManagerAccessor playerManager = (PlayerManagerAccessor) server.getPlayerManager();
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+        PlayerManagerAccessor playerManager = (PlayerManagerAccessor) server.getPlayerList();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             playerManager.unknownmod$sendScoreboard(scoreboard, player);
         }
     }
 
-    private static void refreshPlayerInfo(MinecraftServer server, Collection<ServerPlayerEntity> players) {
+    private static void refreshPlayerInfo(MinecraftServer server, Collection<ServerPlayer> players) {
         if (players == null || players.isEmpty()) {
             return;
         }
 
         List<UUID> uuids = players.stream()
-                .map(ServerPlayerEntity::getUuid)
+                .map(ServerPlayer::getUUID)
                 .toList();
 
-        server.getPlayerManager().sendToAll(new PlayerRemoveS2CPacket(uuids));
-        server.getPlayerManager().sendToAll(PlayerListS2CPacket.entryFromPlayer(players));
+        server.getPlayerList().broadcastAll(new ClientboundPlayerInfoRemovePacket(uuids));
+        server.getPlayerList().broadcastAll(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(players));
     }
 
     private static void onServerTick(MinecraftServer server) {
@@ -105,7 +108,7 @@ public final class AppearanceSyncManager {
         }
 
         for (UUID pendingUuid : drained) {
-            ServerPlayerEntity viewer = server.getPlayerManager().getPlayer(pendingUuid);
+            ServerPlayer viewer = server.getPlayerList().getPlayer(pendingUuid);
             if (viewer != null) {
                 syncViewer(server, viewer);
             }

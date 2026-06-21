@@ -1,12 +1,14 @@
 package com.unknownmod.util;
 
 import com.unknownmod.state.RevelationStateManager;
-import net.minecraft.scoreboard.AbstractTeam;
-import net.minecraft.scoreboard.Scoreboard;
-import net.minecraft.scoreboard.Team;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.Team;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Formatting;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
 
 import java.util.HashSet;
 import java.util.UUID;
@@ -31,92 +33,89 @@ public final class RevealGlowManager {
         HashSet<UUID> revealedUuids = new HashSet<>(state.getActiveRevealUuids());
 
         Scoreboard scoreboard = server.getScoreboard();
-        Team hiddenTeam = ensureTeam(scoreboard, HIDDEN_TEAM_NAME, AbstractTeam.VisibilityRule.NEVER, Formatting.WHITE);
-        Team revealTeam = ensureTeam(scoreboard, REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.DARK_RED);
+        PlayerTeam hiddenTeam = ensureTeam(scoreboard, HIDDEN_TEAM_NAME, Team.Visibility.NEVER, ChatFormatting.WHITE);
+        PlayerTeam revealTeam = ensureTeam(scoreboard, REVEAL_TEAM_NAME, Team.Visibility.ALWAYS, ChatFormatting.DARK_RED);
         if (hiddenTeam == null || revealTeam == null) {
             return;
         }
 
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            String scoreHolder = player.getNameForScoreboard();
-            if (revealedUuids.contains(player.getUuid())) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            String scoreHolder = player.getScoreboardName();
+            if (revealedUuids.contains(player.getUUID())) {
                 assignToTeam(scoreboard, revealTeam, scoreHolder);
-                player.setGlowing(true);
+                player.setGlowingTag(true);
             } else {
                 assignToTeam(scoreboard, hiddenTeam, scoreHolder);
-                player.setGlowing(false);
+                player.setGlowingTag(false);
             }
         }
     }
 
-    public static void applyIfRevealed(MinecraftServer server, ServerPlayerEntity player) {
-        if (server == null || player == null) {
+    public static void revealPlayer(MinecraftServer server, UUID uuid) {
+        if (server == null || uuid == null) {
             return;
         }
-
-        RevelationStateManager state = RevelationStateManager.getServerState(server);
-        if (!state.isRevealed(player.getUuid())) {
+        ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+        if (player == null) {
             return;
         }
-
         Scoreboard scoreboard = server.getScoreboard();
-        Team revealTeam = ensureTeam(scoreboard, REVEAL_TEAM_NAME, AbstractTeam.VisibilityRule.ALWAYS, Formatting.DARK_RED);
+        PlayerTeam revealTeam = ensureTeam(scoreboard, REVEAL_TEAM_NAME, Team.Visibility.ALWAYS, ChatFormatting.DARK_RED);
         if (revealTeam == null) {
             return;
         }
-
-        assignToTeam(scoreboard, revealTeam, player.getNameForScoreboard());
-        player.setGlowing(true);
+        assignToTeam(scoreboard, revealTeam, player.getScoreboardName());
+        player.setGlowingTag(true);
     }
 
     public static void clearReveal(MinecraftServer server, UUID uuid) {
-        if (server == null) {
+        if (server == null || uuid == null) {
             return;
         }
-
-        if (uuid != null) {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
-            if (player != null) {
-                Scoreboard scoreboard = server.getScoreboard();
-                Team revealTeam = scoreboard.getTeam(REVEAL_TEAM_NAME);
-                if (revealTeam != null) {
-                    removeFromTeam(scoreboard, revealTeam, player.getNameForScoreboard());
-                }
-                player.setGlowing(false);
-            }
+        ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+        if (player == null) {
+            return;
         }
+        Scoreboard scoreboard = server.getScoreboard();
+        PlayerTeam hiddenTeam = ensureTeam(scoreboard, HIDDEN_TEAM_NAME, Team.Visibility.NEVER, ChatFormatting.WHITE);
+        if (hiddenTeam != null) {
+            assignToTeam(scoreboard, hiddenTeam, player.getScoreboardName());
+        }
+        player.setGlowingTag(false);
     }
 
-    private static void removeFromTeam(Scoreboard scoreboard, Team targetTeam, String scoreHolder) {
-        Team currentTeam = scoreboard.getScoreHolderTeam(scoreHolder);
+    private static void removeFromTeam(Scoreboard scoreboard, PlayerTeam targetTeam, String scoreHolder) {
+        PlayerTeam currentTeam = scoreboard.getPlayersTeam(scoreHolder);
         if (currentTeam == targetTeam) {
-            scoreboard.removeScoreHolderFromTeam(scoreHolder, targetTeam);
+            scoreboard.removePlayerFromTeam(scoreHolder, targetTeam);
         }
     }
 
-    private static void assignToTeam(Scoreboard scoreboard, Team targetTeam, String scoreHolder) {
-        Team currentTeam = scoreboard.getScoreHolderTeam(scoreHolder);
+    private static void assignToTeam(Scoreboard scoreboard, PlayerTeam targetTeam, String scoreHolder) {
+        PlayerTeam currentTeam = scoreboard.getPlayersTeam(scoreHolder);
         if (currentTeam != null && currentTeam != targetTeam) {
-            scoreboard.removeScoreHolderFromTeam(scoreHolder, currentTeam);
+            scoreboard.removePlayerFromTeam(scoreHolder, currentTeam);
         }
-
         if (currentTeam != targetTeam) {
-            scoreboard.addScoreHolderToTeam(scoreHolder, targetTeam);
+            scoreboard.addPlayerToTeam(scoreHolder, targetTeam);
         }
     }
 
-    private static Team ensureTeam(Scoreboard scoreboard, String name, AbstractTeam.VisibilityRule nameTagVisibility, Formatting color) {
-        Team team = scoreboard.getTeam(name);
+    private static PlayerTeam ensureTeam(Scoreboard scoreboard, String name, Team.Visibility nameTagVisibility, ChatFormatting color) {
+        PlayerTeam team = scoreboard.getPlayerTeam(name);
         if (team == null) {
-            team = scoreboard.addTeam(name);
-            if (team == null) {
-                return null;
-            }
+            team = scoreboard.addPlayerTeam(name);
+            team.setNameTagVisibility(nameTagVisibility);
+            team.setColor(color);
         }
-
-        team.setNameTagVisibilityRule(nameTagVisibility);
-        team.setCollisionRule(AbstractTeam.CollisionRule.NEVER);
-        team.setColor(color);
         return team;
+    }
+
+    private static void broadcastTeamChange(MinecraftServer server, PlayerTeam team) {
+        server.getPlayerList().broadcastAll(ClientboundSetPlayerTeamPacket.createAddOrModifyPacket(team, false));
+    }
+
+    private static void broadcastTeamRemove(MinecraftServer server, PlayerTeam team) {
+        server.getPlayerList().broadcastAll(ClientboundSetPlayerTeamPacket.createRemovePacket(team));
     }
 }

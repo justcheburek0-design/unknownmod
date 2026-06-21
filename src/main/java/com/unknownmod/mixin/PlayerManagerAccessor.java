@@ -1,12 +1,12 @@
 package com.unknownmod.mixin;
 
-import net.minecraft.scoreboard.ServerScoreboard;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.ServerScoreboard;
+import net.minecraft.server.level.ServerPlayer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-@Mixin(net.minecraft.server.PlayerManager.class)
+@Mixin(net.minecraft.server.players.PlayerList.class)
 public interface PlayerManagerAccessor {
-    @Invoker("sendScoreboard")
-    void unknownmod$sendScoreboard(ServerScoreboard scoreboard, ServerPlayerEntity player);
+    @Invoker("updateEntireScoreboard")
+    void unknownmod$sendScoreboard(ServerScoreboard scoreboard, ServerPlayer player);
 }

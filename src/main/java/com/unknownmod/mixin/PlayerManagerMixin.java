@@ -4,85 +4,68 @@ import com.unknownmod.config.ConfigManager;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.PlayerHistoryStateManager;
 import com.unknownmod.state.RevelationManager;
-import com.unknownmod.util.MessageFormatter;
-import com.unknownmod.util.AppearanceSyncManager;
-import com.unknownmod.util.ProfileApplier;
+import com.unknownmod.state.ServerContextHolder;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.PlayerManager;
-import net.minecraft.server.network.ConnectedClientData;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(PlayerManager.class)
+@Mixin(PlayerList.class)
 public abstract class PlayerManagerMixin {
 
     @Shadow
     @Final
     private MinecraftServer server;
 
-    @org.spongepowered.asm.mixin.Unique
-    private boolean unknownmod$suppressLeaveBroadcast;
+    @Inject(method = "placeNewPlayer", at = @At("TAIL"))
+    private void unknownmod$sendJoinMessage(net.minecraft.network.Connection connection, ServerPlayer player, CommonListenerCookie cookie, CallbackInfo ci) {
+        java.util.UUID uuid = player.getUUID();
 
-    @Redirect(
-            method = "onPlayerConnect",
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/PlayerManager;broadcast(Lnet/minecraft/text/Text;Z)V")
-    )
-    private void unknownmod$skipJoinBroadcast(PlayerManager instance, Text message, boolean overlay) {
-    }
+        // Запоминаем оригинальный профиль
+        IdentityStore.remember(player.getGameProfile());
 
-    @Inject(method = "onPlayerConnect", at = @At("TAIL"))
-    private void unknownmod$sendJoinMessage(net.minecraft.network.ClientConnection connection, ServerPlayerEntity player, ConnectedClientData clientData, CallbackInfo ci) {
-        RevelationManager.resumeRevealIfPaused(server, player.getUuid());
-        IdentityStore.getOriginalName(player.getUuid())
-                .ifPresent(name -> PlayerHistoryStateManager.getServerState(server).recordJoin(player.getUuid(), name, System.currentTimeMillis()));
-        ProfileApplier.refreshPlayer(server, player);
-        AppearanceSyncManager.queueViewerSync(player);
-        broadcastCustomMessage(ConfigManager.getConfig().messages.joined, player);
-    }
+        ServerContextHolder.setServer(server);
+        boolean revealed = RevelationManager.isRevealed(server, uuid);
+        java.util.Optional<String> originalNameOpt = IdentityStore.getOriginalName(uuid);
+        String originalName = originalNameOpt.orElse(player.getName().getString());
 
-    @Inject(method = "remove", at = @At("HEAD"))
-    private void unknownmod$markLeaveBroadcastSuppressed(ServerPlayerEntity player, CallbackInfo ci) {
-        unknownmod$suppressLeaveBroadcast = true;
-        RevelationManager.pauseRevealIfMatches(server, player.getUuid());
-    }
-
-    @Inject(method = "broadcast(Lnet/minecraft/text/Text;Z)V", at = @At("HEAD"), cancellable = true)
-    private void unknownmod$skipLeaveBroadcast(Text message, boolean overlay, CallbackInfo ci) {
-        if (unknownmod$suppressLeaveBroadcast) {
-            ci.cancel();
+        if (revealed) {
+            MutableComponent joinMessage = Component.literal("+" + originalName).withStyle(ChatFormatting.GREEN);
+            player.sendSystemMessage(joinMessage);
+        } else {
+            String displayName = player.getName().getString();
+            MutableComponent joinMessage = Component.literal("+" + displayName).withStyle(ChatFormatting.GRAY);
+            player.sendSystemMessage(joinMessage);
         }
+
+        // Record join in history
+        PlayerHistoryStateManager.getServerState(server).recordJoin(uuid, originalName, System.currentTimeMillis());
     }
 
     @Inject(method = "remove", at = @At("TAIL"))
-    private void unknownmod$sendLeaveMessage(ServerPlayerEntity player, CallbackInfo ci) {
-        unknownmod$suppressLeaveBroadcast = false;
-        broadcastCustomMessage(ConfigManager.getConfig().messages.left, player);
-    }
+    private void unknownmod$sendLeaveMessage(ServerPlayer player, CallbackInfo ci) {
+        java.util.UUID uuid = player.getUUID();
 
-    private void broadcastCustomMessage(String template, ServerPlayerEntity player) {
-        String displayName = ProfileApplier.getDisplayName(server, player);
-        if (displayName == null || displayName.isBlank()) {
-            displayName = player.getName().getString();
+        ServerContextHolder.setServer(server);
+        boolean revealed = RevelationManager.isRevealed(server, uuid);
+        java.util.Optional<String> originalNameOpt = IdentityStore.getOriginalName(uuid);
+        String originalName = originalNameOpt.orElse(player.getName().getString());
+
+        if (revealed) {
+            server.getPlayerList().broadcastSystemMessage(
+                Component.literal("-" + originalName).withStyle(ChatFormatting.RED), false);
+        } else {
+            server.getPlayerList().broadcastSystemMessage(
+                Component.literal("-" + player.getName().getString()).withStyle(ChatFormatting.DARK_GRAY), false);
         }
-
-        Text playerText = Text.literal(displayName);
-        if (RevelationManager.isRevealed(server, player.getUuid())) {
-            playerText = playerText.copy().formatted(Formatting.RED);
-        }
-
-        Text message = MessageFormatter.formatWithTextPlaceholder(template, "player", playerText);
-        if (message == null || message.getString().isBlank()) {
-            return;
-        }
-
-        server.getPlayerManager().broadcast(message, false);
     }
 }
