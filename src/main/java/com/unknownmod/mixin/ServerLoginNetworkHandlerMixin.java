@@ -24,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ServerLoginNetworkHandlerMixin {
 
     @Shadow
-    private GameProfile profile;
+    private GameProfile authenticatedProfile;
 
     @Shadow
     private MinecraftServer server;
@@ -34,11 +34,11 @@ public abstract class ServerLoginNetworkHandlerMixin {
 
     @Inject(method = "tick", at = @At("HEAD"))
     private void unknownmod$patchProfile(CallbackInfo ci) {
-        if (unknownmod$patched || profile == null) {
+        if (unknownmod$patched || authenticatedProfile == null) {
             return;
         }
 
-        GameProfile originalProfile = profile;
+        GameProfile originalProfile = authenticatedProfile;
         if (!ProfileApplier.hasTextures(originalProfile) && originalProfile.name() != null && !originalProfile.name().isBlank()) {
             SkinFetcher.SkinData originalTextures = SkinFetcher.fetchTexturesByNickname(originalProfile.name());
             if (originalTextures != null) {
@@ -46,24 +46,24 @@ public abstract class ServerLoginNetworkHandlerMixin {
                         originalProfile,
                         new Property("textures", originalTextures.value, originalTextures.signature)
                 );
-                DebugMessenger.debug(server, "[login] fetched original textures for " + profile.name()
+                DebugMessenger.debug(server, "[login] fetched original textures for " + authenticatedProfile.name()
                         + "; valueLen=" + originalTextures.value.length()
                         + ", signatureLen=" + originalTextures.signature.length() + ".");
             } else {
-                DebugMessenger.debug(server, "[login] original textures not found for " + profile.name() + ".");
+                DebugMessenger.debug(server, "[login] original textures not found for " + authenticatedProfile.name() + ".");
             }
         }
 
         ProfileApplier.rememberOriginalProfile(originalProfile);
 
         UnknownConfig config = ConfigManager.getConfig();
-        originalProfile = ProfileApplier.getOriginalProfile(profile.id());
+        originalProfile = ProfileApplier.getOriginalProfile(authenticatedProfile.id());
         if (originalProfile == null) {
-            originalProfile = profile;
+            originalProfile = authenticatedProfile;
         }
-        boolean revealed = server != null && RevelationManager.isRevealed(server, profile.id());
+        boolean revealed = server != null && RevelationManager.isRevealed(server, authenticatedProfile.id());
         if (revealed) {
-            DebugMessenger.debug(server, "[login] profile " + profile.name() + " is revealed; skipping anonymous patch.");
+            DebugMessenger.debug(server, "[login] profile " + authenticatedProfile.name() + " is revealed; skipping anonymous patch.");
             unknownmod$patched = true;
             return;
         }
@@ -72,22 +72,22 @@ public abstract class ServerLoginNetworkHandlerMixin {
         Property texturesProp = ProfileApplier.resolveTextures(config);
         Property originalTextures = ProfileApplier.getTextures(originalProfile);
 
-        boolean changeName = displayName != null && !displayName.isEmpty() && !displayName.equals(profile.name());
+        boolean changeName = displayName != null && !displayName.isEmpty() && !displayName.equals(authenticatedProfile.name());
         boolean changeSkin = texturesProp != null || originalTextures != null;
-        DebugMessenger.debug(server, "[login] evaluating profile patch for " + profile.name()
+        DebugMessenger.debug(server, "[login] evaluating profile patch for " + authenticatedProfile.name()
                 + "; changeName=" + changeName
                 + ", changeSkin=" + changeSkin
                 + ", originalTextures=" + describeTextures(originalProfile)
                 + ", resolvedTextures=" + (texturesProp == null ? "absent" : "present(valueLen=" + safeLen(texturesProp.value()) + ", signatureLen=" + safeLen(texturesProp.signature()) + ")")
                 + ".");
         if (!changeName && !changeSkin) {
-            DebugMessenger.debug(server, "[login] no changes required for " + profile.name() + ".");
+            DebugMessenger.debug(server, "[login] no changes required for " + authenticatedProfile.name() + ".");
             return;
         }
 
-        String finalName = changeName ? displayName : profile.name();
+        String finalName = changeName ? displayName : authenticatedProfile.name();
         Property finalTextures = texturesProp != null ? texturesProp : originalTextures;
-        GameProfile newProfile = new GameProfile(profile.id(), finalName);
+        GameProfile newProfile = new GameProfile(authenticatedProfile.id(), finalName);
 
         Multimap<String, Property> multimap = HashMultimap.create();
         for (var entry : originalProfile.properties().entries()) {
@@ -104,9 +104,9 @@ public abstract class ServerLoginNetworkHandlerMixin {
         PropertyMap newProps = new PropertyMap(multimap);
         ((GameProfileAccessor) (Object) newProfile).setProperties(newProps);
 
-        this.profile = newProfile;
+        this.authenticatedProfile = newProfile;
         this.unknownmod$patched = true;
-        DebugMessenger.debug(server, "[login] profile patched for " + profile.name() + " -> " + finalName + "; texturesCount=" + newProps.get("textures").size() + ".");
+        DebugMessenger.debug(server, "[login] profile patched for " + authenticatedProfile.name() + " -> " + finalName + "; texturesCount=" + newProps.get("textures").size() + ".");
     }
 
     private static String describeTextures(GameProfile profile) {

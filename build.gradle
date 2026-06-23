@@ -22,6 +22,9 @@ loom {
             sourceSet sourceSets.main
         }
     }
+    mixin {
+        defaultRefmapName = "unknownmod.refmap.json"
+    }
 }
 
 dependencies {

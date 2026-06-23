@@ -17,6 +17,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(PlayerList.class)
@@ -27,45 +28,32 @@ public abstract class PlayerManagerMixin {
     private MinecraftServer server;
 
     @Inject(method = "placeNewPlayer", at = @At("TAIL"))
-    private void unknownmod$sendJoinMessage(net.minecraft.network.Connection connection, ServerPlayer player, CommonListenerCookie cookie, CallbackInfo ci) {
+    private void unknownmod$onPlayerJoin(net.minecraft.network.Connection connection, ServerPlayer player, CommonListenerCookie cookie, CallbackInfo ci) {
         java.util.UUID uuid = player.getUUID();
 
         // Запоминаем оригинальный профиль
         IdentityStore.remember(player.getGameProfile());
 
         ServerContextHolder.setServer(server);
-        boolean revealed = RevelationManager.isRevealed(server, uuid);
+        
+        // Record join in history (silently, no broadcast)
         java.util.Optional<String> originalNameOpt = IdentityStore.getOriginalName(uuid);
         String originalName = originalNameOpt.orElse(player.getName().getString());
-
-        if (revealed) {
-            MutableComponent joinMessage = Component.literal("+" + originalName).withStyle(ChatFormatting.GREEN);
-            player.sendSystemMessage(joinMessage);
-        } else {
-            String displayName = player.getName().getString();
-            MutableComponent joinMessage = Component.literal("+" + displayName).withStyle(ChatFormatting.GRAY);
-            player.sendSystemMessage(joinMessage);
-        }
-
-        // Record join in history
         PlayerHistoryStateManager.getServerState(server).recordJoin(uuid, originalName, System.currentTimeMillis());
     }
 
+    // Suppress the join broadcast sent by vanilla placeNewPlayer
+    @Redirect(
+            method = "placeNewPlayer",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/players/PlayerList;broadcastSystemMessage(Lnet/minecraft/network/chat/Component;Z)V")
+    )
+    private void unknownmod$suppressJoinBroadcast(PlayerList instance, Component message, boolean overlay) {
+        // Silent join - no broadcast
+    }
+
     @Inject(method = "remove", at = @At("TAIL"))
-    private void unknownmod$sendLeaveMessage(ServerPlayer player, CallbackInfo ci) {
-        java.util.UUID uuid = player.getUUID();
-
+    private void unknownmod$onPlayerLeave(ServerPlayer player, CallbackInfo ci) {
+        // Silent leave - no broadcast
         ServerContextHolder.setServer(server);
-        boolean revealed = RevelationManager.isRevealed(server, uuid);
-        java.util.Optional<String> originalNameOpt = IdentityStore.getOriginalName(uuid);
-        String originalName = originalNameOpt.orElse(player.getName().getString());
-
-        if (revealed) {
-            server.getPlayerList().broadcastSystemMessage(
-                Component.literal("-" + originalName).withStyle(ChatFormatting.RED), false);
-        } else {
-            server.getPlayerList().broadcastSystemMessage(
-                Component.literal("-" + player.getName().getString()).withStyle(ChatFormatting.DARK_GRAY), false);
-        }
     }
 }
