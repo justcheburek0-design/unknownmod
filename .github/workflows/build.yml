@@ -1,30 +1,156 @@
-# Automatically build the project and run any configured tests for every push
-# and submitted pull request. This can help catch issues that only occur on
-# certain platforms or Java versions, and provides a first line of defence
-# against bad commits.
+name: build-and-deploy
 
-name: build
-on: [pull_request, push]
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: unknownmod-deploy
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: validate gradle wrapper
+
+      - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
-      - name: setup jdk
+
+      - name: Setup JDK 25
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'microsoft'
-      - name: make gradle wrapper executable
+          java-version: '25'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: build
-        run: ./gradlew build
-      - name: capture build artifacts
+
+      - name: Validate mixin config
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          cfg = json.loads(Path('src/main/resources/unknownmod.mixins.json').read_text())
+          base = Path('src/main/java/com/unknownmod/mixin')
+          missing = []
+
+          for name in cfg.get('mixins', []):
+              path = base / (name.replace('.', '/') + '.java')
+              if not path.exists():
+                  missing.append(str(path))
+
+          for name in cfg.get('client', []):
+              path = base / (name.replace('.', '/') + '.java')
+              if not path.exists():
+                  missing.append(str(path))
+
+          if missing:
+              raise SystemExit('Missing mixin source files:\n' + '\n'.join(missing))
+          PY
+
+      - name: Build
+        run: ./gradlew --no-daemon build
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Artifacts
-          path: build/libs/
+          name: unknownmod-jar
+          path: build/libs/unknownmod-*.jar
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: unknownmod-jar
+          path: dist
+
+      - name: Select runtime JAR
+        id: jar
+        run: |
+          set -euo pipefail
+          JAR=$(find dist -maxdepth 1 -type f -name 'unknownmod-*.jar' ! -name '*sources.jar' | head -n 1)
+          test -n "$JAR"
+          echo "path=$JAR" >> "$GITHUB_OUTPUT"
+          ls -lh "$JAR"
+
+      - name: Configure SSH
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.MC_SSH_KEY }}" > ~/.ssh/unknownmod_ci
+          chmod 600 ~/.ssh/unknownmod_ci
+          ssh-keyscan -H "${{ secrets.MC_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload JAR to server
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/unknownmod_ci "${{ steps.jar.outputs.path }}" "${{ secrets.MC_USER }}@${{ secrets.MC_HOST }}:/tmp/unknownmod-4.0.jar.new"
+
+      - name: Install JAR, restart, verify and rollback on failure
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/unknownmod_ci "${{ secrets.MC_USER }}@${{ secrets.MC_HOST }}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+
+          SERVER_DIR=/home/minecraft/server
+          MODS_DIR="$SERVER_DIR/mods"
+          JAR="$MODS_DIR/unknownmod-4.0.jar"
+          NEW=/tmp/unknownmod-4.0.jar.new
+          BACKUP="$MODS_DIR/unknownmod-4.0.jar.backup.$(date +%Y%m%d%H%M%S)"
+          LOG="$SERVER_DIR/logs/latest.log"
+
+          test -s "$NEW"
+          test -d "$SERVER_DIR"
+          test -w "$MODS_DIR"
+
+          if [ -f "$JAR" ]; then
+            cp "$JAR" "$BACKUP"
+          fi
+          mv "$NEW" "$JAR"
+          chmod 644 "$JAR"
+
+          pkill -f 'java.*fabric-server-launch' || true
+          sleep 5
+          cd "$SERVER_DIR"
+          : > "$LOG"
+          screen -dmS minecraft ./start.sh
+
+          ok=0
+          for i in $(seq 1 60); do
+            if grep -q 'Done .* For help, type "help"' "$LOG"; then
+              ok=1
+              break
+            fi
+            if grep -qiE 'MixinApplyError|Critical injection failure|Failed to start the minecraft server' "$LOG"; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ "$ok" != "1" ]; then
+            echo 'Deploy failed, rolling back to previous JAR' >&2
+            tail -120 "$LOG" >&2 || true
+            if [ -f "$BACKUP" ]; then
+              cp "$BACKUP" "$JAR"
+              pkill -f 'java.*fabric-server-launch' || true
+              sleep 5
+              cd "$SERVER_DIR"
+              : > "$LOG"
+              screen -dmS minecraft ./start.sh
+            fi
+            exit 1
+          fi
+
+          grep -i 'unknownmod\|Done' "$LOG" | tail -20
+          REMOTE
