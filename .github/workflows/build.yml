@@ -120,10 +120,29 @@ jobs:
           mv "$NEW" "$JAR"
           chmod 644 "$JAR"
 
-          pkill -f 'java.*fabric-server-launch' || true
-          sleep 5
+          stop_server() {
+            pkill -f 'java.*fabric-server-launch' || true
+            for i in $(seq 1 60); do
+              if ! pgrep -f 'java.*fabric-server-launch' >/dev/null; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo 'Server did not stop gracefully, killing hard' >&2
+            pkill -9 -f 'java.*fabric-server-launch' || true
+            for i in $(seq 1 20); do
+              if ! pgrep -f 'java.*fabric-server-launch' >/dev/null; then
+                return 0
+              fi
+              sleep 1
+            done
+            return 1
+          }
+
+          stop_server
           cd "$SERVER_DIR"
           : > "$LOG"
+          screen -S minecraft -X quit >/dev/null 2>&1 || true
           screen -dmS minecraft ./start.sh
 
           ok=0
@@ -143,10 +162,10 @@ jobs:
             tail -120 "$LOG" >&2 || true
             if [ -f "$BACKUP" ]; then
               cp "$BACKUP" "$JAR"
-              pkill -f 'java.*fabric-server-launch' || true
-              sleep 5
+              stop_server || true
               cd "$SERVER_DIR"
               : > "$LOG"
+              screen -S minecraft -X quit >/dev/null 2>&1 || true
               screen -dmS minecraft ./start.sh
             fi
             exit 1
