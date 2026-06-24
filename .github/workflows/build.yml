@@ -124,6 +124,9 @@ jobs:
             pkill -f 'java.*fabric-server-launch' || true
             for i in $(seq 1 60); do
               if ! pgrep -f 'java.*fabric-server-launch' >/dev/null; then
+                screen -S minecraft -X quit >/dev/null 2>&1 || true
+                screen -wipe >/dev/null 2>&1 || true
+                sleep 10
                 return 0
               fi
               sleep 1
@@ -132,6 +135,9 @@ jobs:
             pkill -9 -f 'java.*fabric-server-launch' || true
             for i in $(seq 1 20); do
               if ! pgrep -f 'java.*fabric-server-launch' >/dev/null; then
+                screen -S minecraft -X quit >/dev/null 2>&1 || true
+                screen -wipe >/dev/null 2>&1 || true
+                sleep 10
                 return 0
               fi
               sleep 1
@@ -139,23 +145,42 @@ jobs:
             return 1
           }
 
-          stop_server
-          cd "$SERVER_DIR"
-          : > "$LOG"
-          screen -S minecraft -X quit >/dev/null 2>&1 || true
-          screen -dmS minecraft ./start.sh
+          start_and_verify() {
+            for attempt in 1 2 3; do
+              cd "$SERVER_DIR"
+              : > "$LOG"
+              screen -S minecraft -X quit >/dev/null 2>&1 || true
+              screen -wipe >/dev/null 2>&1 || true
+              screen -dmS minecraft ./start.sh
 
-          ok=0
-          for i in $(seq 1 60); do
-            if grep -q 'Done .* For help, type "help"' "$LOG"; then
-              ok=1
-              break
-            fi
-            if grep -qiE 'MixinApplyError|Critical injection failure|Failed to start the minecraft server' "$LOG"; then
-              break
-            fi
-            sleep 2
-          done
+              for i in $(seq 1 60); do
+                if grep -q 'Done .* For help, type "help"' "$LOG"; then
+                  return 0
+                fi
+                if grep -qiE 'MixinApplyError|Critical injection failure' "$LOG"; then
+                  return 1
+                fi
+                if grep -qi 'session.lock: already locked' "$LOG"; then
+                  echo "Minecraft world lock still held, retrying start ($attempt/3)" >&2
+                  stop_server || true
+                  sleep 15
+                  break
+                fi
+                if grep -qi 'Failed to start the minecraft server' "$LOG"; then
+                  return 1
+                fi
+                sleep 2
+              done
+            done
+            return 1
+          }
+
+          stop_server
+          if ! start_and_verify; then
+            ok=0
+          else
+            ok=1
+          fi
 
           if [ "$ok" != "1" ]; then
             echo 'Deploy failed, rolling back to previous JAR' >&2
