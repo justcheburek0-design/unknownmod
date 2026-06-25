@@ -15,4 +15,8 @@ public final class ServerContextHolder {
     public static MinecraftServer getServer() {
         return server;
     }
+
+    public static void clearServer() {
+        server = null;
+    }
 }

@@ -7,6 +7,7 @@ import com.unknownmod.util.DebugMessenger;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityCombatEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -37,6 +38,10 @@ public class PlayerDeathHandler {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             processedDeaths.clear();
             pruneParticipation(System.currentTimeMillis());
+        });
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            processedDeaths.clear();
+            recentPlayerParticipation.clear();
         });
     }
 

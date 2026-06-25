@@ -5,6 +5,7 @@ import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.PlayerHistoryStateManager;
 import com.unknownmod.state.RevelationManager;
 import com.unknownmod.state.ServerContextHolder;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.server.network.CommonListenerCookie;
@@ -55,5 +56,9 @@ public abstract class PlayerManagerMixin {
     private void unknownmod$onPlayerLeave(ServerPlayer player, CallbackInfo ci) {
         // Silent leave - no broadcast
         ServerContextHolder.setServer(server);
+    }
+
+    static {
+        ServerLifecycleEvents.SERVER_STOPPING.register(minecraftServer -> ServerContextHolder.clearServer());
     }
 }

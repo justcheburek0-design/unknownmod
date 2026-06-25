@@ -59,8 +59,7 @@ public class RevelationStateManager extends SavedData {
                 entry.getUuid().ifPresent(uuid -> this.activeReveals.put(uuid, entry));
             }
         }
-
-        if (this.activeReveals.isEmpty() && revealedPlayerUuid != null && !revealedPlayerUuid.isBlank()) {
+         if (this.activeReveals.isEmpty() && revealedPlayerUuid != null && !revealedPlayerUuid.isBlank()) {
             try {
                 UUID uuid = UUID.fromString(revealedPlayerUuid);
                 this.activeReveals.put(uuid, new RevealEntry(revealedPlayerUuid, revealedPlayerName, revealEndsAtMillis, 0L, false));
