@@ -24,7 +24,10 @@ import java.util.UUID;
 @Mixin(net.minecraft.client.multiplayer.ClientPacketListener.class)
 public abstract class ClientPlayNetworkHandlerMixin {
     @Shadow
-    public abstract PlayerInfo getPlayerListEntry(UUID uuid);
+    public abstract PlayerInfo getPlayerInfo(UUID uuid);
+
+    @Shadow
+    private java.util.Map<UUID, PlayerInfo> playerInfoMap;
 
     @Inject(method = "onPlayerList", at = @At("TAIL"))
     private void unknownmod$refreshPlayerCache(ClientboundPlayerInfoUpdatePacket packet, CallbackInfo ci) {
@@ -34,7 +37,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
         }
 
         for (ClientboundPlayerInfoUpdatePacket.Entry packetEntry : packet.entries()) {
-            PlayerInfo listEntry = getPlayerListEntry(packetEntry.profileId());
+            PlayerInfo listEntry = getPlayerInfo(packetEntry.profileId());
             if (listEntry == null) {
                 continue;
             }
@@ -42,20 +45,20 @@ public abstract class ClientPlayNetworkHandlerMixin {
             GameProfile incomingProfile = packetEntry.profile();
             GameProfile mergedProfile = mergePreservingTextures(listEntry.getProfile(), incomingProfile);
             if (needsRefresh(listEntry.getProfile(), mergedProfile)) {
-                ((PlayerListEntryAccessor) listEntry).setProfile(mergedProfile);
-                ((PlayerListEntryAccessor) listEntry).setTexturesSupplier(null);
+                PlayerInfo newInfo = new PlayerInfo(mergedProfile, true);
+                this.playerInfoMap.put(packetEntry.profileId(), newInfo);
             }
         }
 
         for (AbstractClientPlayer player : client.level.players()) {
-            PlayerInfo listEntry = getPlayerListEntry(player.getUUID());
+            PlayerInfo listEntry = getPlayerInfo(player.getUUID());
             if (listEntry == null) {
                 continue;
             }
 
             GameProfile incomingProfile = mergePreservingTextures(player.getGameProfile(), listEntry.getProfile());
             if (needsRefresh(player.getGameProfile(), incomingProfile)) {
-                ((PlayerEntityAccessor) (Object) player).setGameProfile(incomingProfile);
+                PlayerEntityAccessor.setGameProfile(player, incomingProfile);
             }
         }
     }

@@ -77,14 +77,10 @@ public final class IdentityStore {
     }
 
     private static GameProfile copy(GameProfile profile) {
-        GameProfile copy = new GameProfile(profile.id(), profile.name());
-
         Multimap<String, Property> multimap = HashMultimap.create();
         for (var entry : profile.properties().entries()) {
             multimap.put(entry.getKey(), entry.getValue());
         }
-
-        ((com.unknownmod.mixin.GameProfileAccessor) (Object) copy).setProperties(new PropertyMap(multimap));
-        return copy;
+        return new GameProfile(profile.id(), profile.name(), new PropertyMap(multimap));
     }
 }

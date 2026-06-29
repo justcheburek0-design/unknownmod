@@ -87,7 +87,6 @@ public abstract class ServerLoginNetworkHandlerMixin {
 
         String finalName = changeName ? displayName : authenticatedProfile.name();
         Property finalTextures = texturesProp != null ? texturesProp : originalTextures;
-        GameProfile newProfile = new GameProfile(authenticatedProfile.id(), finalName);
 
         Multimap<String, Property> multimap = HashMultimap.create();
         for (var entry : originalProfile.properties().entries()) {
@@ -101,12 +100,11 @@ public abstract class ServerLoginNetworkHandlerMixin {
             multimap.put("textures", finalTextures);
         }
 
-        PropertyMap newProps = new PropertyMap(multimap);
-        ((GameProfileAccessor) (Object) newProfile).setProperties(newProps);
+        GameProfile newProfile = new GameProfile(authenticatedProfile.id(), finalName, new PropertyMap(multimap));
 
         this.authenticatedProfile = newProfile;
         this.unknownmod$patched = true;
-        DebugMessenger.debug(server, "[login] profile patched for " + authenticatedProfile.name() + " -> " + finalName + "; texturesCount=" + newProps.get("textures").size() + ".");
+        DebugMessenger.debug(server, "[login] profile patched for " + newProfile.name() + " -> " + finalName + ".");
     }
 
     private static String describeTextures(GameProfile profile) {
