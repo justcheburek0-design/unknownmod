@@ -8,7 +8,6 @@
     "PlayerManagerAccessor",
     "ServerLoginNetworkHandlerMixin",
     "ServerPlayNetworkHandlerMixin",
-    "TabListFilterMixin",
     "PlayerEntityAccessor",
     "GameProfileAccessor",
     "PlayerListS2CPacketAccessor"

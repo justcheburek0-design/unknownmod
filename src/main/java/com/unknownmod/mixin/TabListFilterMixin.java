@@ -1,23 +1,4 @@
-package com.unknownmod.mixin;
-
-import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
-import net.minecraft.server.network.ServerCommonPacketListenerImpl;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-
-import java.util.Collections;
-
-@Mixin(ServerCommonPacketListenerImpl.class)
-public abstract class TabListFilterMixin {
-
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V", at = @At("HEAD"), cancellable = true)
-    private void unknownmod$filterTabList(Packet<?> packet, CallbackInfo ci) {
-        if (packet instanceof ClientboundPlayerInfoUpdatePacket playerInfoPacket) {
-            // Clear entries so the tab list appears empty
-            ((com.unknownmod.mixin.PlayerListS2CPacketAccessor) playerInfoPacket).setEntries(Collections.emptyList());
-        }
-    }
-}
+// REMOVED: TabListFilterMixin cleared all entries from ClientboundPlayerInfoUpdatePacket,
+// which conflicted with PacketS2CFilterMixin (entries were empty before anonymization could run)
+// and broke latency/gamemode updates in the tab list.
+// PacketS2CFilterMixin now handles all tab list filtering by anonymizing profiles instead.

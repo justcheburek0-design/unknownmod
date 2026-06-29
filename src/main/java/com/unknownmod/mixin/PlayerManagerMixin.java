@@ -54,7 +54,8 @@ public abstract class PlayerManagerMixin {
 
     @Inject(method = "remove", at = @At("TAIL"))
     private void unknownmod$onPlayerLeave(ServerPlayer player, CallbackInfo ci) {
-        // Silent leave - no broadcast
+        // Evict from IdentityStore when player disconnects to prevent memory leak
+        IdentityStore.forget(player.getUUID());
         ServerContextHolder.setServer(server);
     }
 

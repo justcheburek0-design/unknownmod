@@ -19,17 +19,16 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerLevel;
 
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerDeathHandler {
     private static final long PLAYER_PARTICIPATION_WINDOW_MS = 15_000L;
 
-    private static final Set<UUID> processedDeaths = new HashSet<>();
-    private static final Map<UUID, PlayerParticipation> recentPlayerParticipation = new HashMap<>();
+    private static final Set<UUID> processedDeaths = ConcurrentHashMap.newKeySet();
+    private static final Map<UUID, PlayerParticipation> recentPlayerParticipation = new ConcurrentHashMap<>();
 
     public static void register() {
         ServerEntityCombatEvents.AFTER_KILLED_OTHER_ENTITY.register(PlayerDeathHandler::handleDirectKill);

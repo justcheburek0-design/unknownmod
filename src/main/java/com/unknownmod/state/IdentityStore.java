@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class IdentityStore {
+    private static final int MAX_STORED_PROFILES = 500;
     private static final ConcurrentMap<UUID, GameProfile> ORIGINAL_PROFILES = new ConcurrentHashMap<>();
 
     private IdentityStore() {
@@ -26,7 +27,20 @@ public final class IdentityStore {
             return;
         }
 
+        // Evict oldest entries if capacity exceeded
+        if (ORIGINAL_PROFILES.size() >= MAX_STORED_PROFILES && !ORIGINAL_PROFILES.containsKey(profile.id())) {
+            // Remove one arbitrary entry to make room (ConcurrentHashMap doesn't maintain order,
+            // but this prevents unbounded growth)
+            ORIGINAL_PROFILES.keySet().stream().findFirst().ifPresent(ORIGINAL_PROFILES::remove);
+        }
+
         ORIGINAL_PROFILES.putIfAbsent(profile.id(), copy(profile));
+    }
+
+    public static void forget(UUID uuid) {
+        if (uuid != null) {
+            ORIGINAL_PROFILES.remove(uuid);
+        }
     }
 
     public static Optional<GameProfile> get(UUID uuid) {

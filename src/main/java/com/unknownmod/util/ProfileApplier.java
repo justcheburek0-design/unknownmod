@@ -7,7 +7,6 @@ import com.mojang.authlib.properties.Property;
 import com.mojang.authlib.properties.PropertyMap;
 import com.unknownmod.config.ConfigManager;
 import com.unknownmod.config.UnknownConfig;
-import com.unknownmod.mixin.PlayerEntityAccessor;
 import com.unknownmod.mixin.PlayerListS2CPacketAccessor;
 import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.RevelationManager;
@@ -15,8 +14,6 @@ import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.ChatFormatting;
 
 import java.util.List;
@@ -215,63 +212,39 @@ public final class ProfileApplier {
         AppearanceSyncManager.syncPlayer(server, player);
     }
 
+    /**
+     * Apply current profile state for a player.
+     * NOTE: We no longer mutate the server-side gameProfile directly.
+     * All anonymity is handled via PacketS2CFilterMixin which intercepts
+     * outgoing ClientboundPlayerInfoUpdatePacket packets and anonymizes them.
+     * This method only triggers a packet resync so clients see the latest state.
+     */
     public static void applyCurrentProfile(MinecraftServer server, ServerPlayer player, UnknownConfig config) {
-        if (RevelationManager.isRevealed(server, player.getUUID())) {
-            DebugMessenger.debug(server, LOG_PREFIX + " applying original profile to revealed player " + player.getName().getString() + ".");
-            applyOriginalProfile(player);
-            return;
-        }
-
-        DebugMessenger.debug(server, LOG_PREFIX + " applying anonymous profile to player " + player.getName().getString() + ".");
-        applyAnonymousProfile(server, player, config);
+        // Profile mutability removed — packet-level anonymization is the single source of truth.
+        // Just trigger appearance sync to resend player info packets.
+        DebugMessenger.debug(server, LOG_PREFIX + " applyCurrentProfile called for " + player.getName().getString()
+                + "; revealed=" + RevelationManager.isRevealed(server, player.getUUID()) + ".");
     }
 
+    /**
+     * @deprecated Use packet-level anonymization via PacketS2CFilterMixin instead.
+     * Restoring the original profile on the server side is no longer needed
+     * because we never mutate it in the first place.
+     */
+    @Deprecated
     public static boolean applyOriginalProfile(ServerPlayer player) {
-        GameProfile originalProfile = getOriginalProfile(player.getUUID());
-        if (originalProfile == null) {
-            DebugMessenger.debug(null, LOG_PREFIX + " original profile not found for uuid " + player.getUUID() + ".");
-            return false;
-        }
-
-        PlayerEntityAccessor.setGameProfile(player, originalProfile);
-        DebugMessenger.debug(null, LOG_PREFIX + " original profile restored for uuid " + player.getUUID() + " (" + originalProfile.name() + ").");
+        // No-op: server profile is never mutated, so no need to restore.
+        DebugMessenger.debug(null, LOG_PREFIX + " applyOriginalProfile is a no-op (server profile unchanged) for uuid " + player.getUUID() + ".");
         return true;
     }
 
+    /**
+     * @deprecated Use packet-level anonymization via PacketS2CFilterMixin instead.
+     */
+    @Deprecated
     public static void applyAnonymousProfile(MinecraftServer server, ServerPlayer player, UnknownConfig config) {
-        GameProfile baseProfile = getOriginalProfile(player.getUUID());
-        if (baseProfile == null) {
-            baseProfile = IdentityStore.get(player.getUUID()).orElse(player.getGameProfile());
-        }
-        String anonymousName = baseProfile.name();
-        if (config.anonymous != null && config.anonymous.name != null && !config.anonymous.name.isBlank()) {
-            anonymousName = config.anonymous.name;
-        }
-
-        Multimap<String, Property> multimap = HashMultimap.create();
-        Property texturesProp = resolveTextures(config);
-        Property finalTextures = texturesProp != null ? texturesProp : getTextures(baseProfile);
-        DebugMessenger.debug(server, LOG_PREFIX + " building anonymous profile for " + player.getName().getString()
-                + "; baseName=" + baseProfile.name()
-                + ", anonymousName=" + anonymousName
-                + ", baseTextures=" + describeProfileTextures(baseProfile)
-                + ", resolvedTextures=" + describeProperty(texturesProp)
-                + ", finalTextures=" + describeProperty(finalTextures)
-                + ".");
-
-        for (var entry : baseProfile.properties().entries()) {
-            if (!"textures".equals(entry.getKey())) {
-                multimap.put(entry.getKey(), entry.getValue());
-            }
-        }
-
-        if (finalTextures != null) {
-            multimap.put("textures", finalTextures);
-        }
-        PropertyMap propertyMap = new PropertyMap(multimap);
-        GameProfile newProfile = new GameProfile(baseProfile.id(), anonymousName, propertyMap);
-        PlayerEntityAccessor.setGameProfile(player, newProfile);
-        DebugMessenger.debug(server, LOG_PREFIX + " anonymous profile applied to " + player.getName().getString() + " with texturesCount=" + multimap.get("textures").size() + ".");
+        // No-op: packet-level anonymization handles everything.
+        DebugMessenger.debug(server, LOG_PREFIX + " applyAnonymousProfile is a no-op (packet-level anonymization) for " + player.getName().getString() + ".");
     }
 
     public static boolean hasTextures(GameProfile profile) {
