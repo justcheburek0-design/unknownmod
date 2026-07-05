@@ -21,6 +21,7 @@
     "client.PlayerListEntryAccessor"
   ],
   "injectors": {
-    "defaultRequire": 1
-  }
+  "defaultRequire": 1
+  },
+  "refmap": "unknownmod-refmap.json"
 }

@@ -29,7 +29,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
     @Shadow
     private java.util.Map<UUID, PlayerInfo> playerInfoMap;
 
-    @Inject(method = "onPlayerList", at = @At("TAIL"))
+    @Inject(method = "handlePlayerInfoUpdate", at = @At("TAIL"))
     private void unknownmod$refreshPlayerCache(ClientboundPlayerInfoUpdatePacket packet, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) {
