@@ -42,10 +42,10 @@ public final class RevealGlowManager {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             String scoreHolder = player.getScoreboardName();
             if (revealedUuids.contains(player.getUUID())) {
-                assignToTeam(scoreboard, revealTeam, scoreHolder);
+                assignToTeam(server, scoreboard, revealTeam, scoreHolder);
                 player.setGlowingTag(true);
             } else {
-                assignToTeam(scoreboard, hiddenTeam, scoreHolder);
+                assignToTeam(server, scoreboard, hiddenTeam, scoreHolder);
                 player.setGlowingTag(false);
             }
         }
@@ -64,7 +64,7 @@ public final class RevealGlowManager {
         if (revealTeam == null) {
             return;
         }
-        assignToTeam(scoreboard, revealTeam, player.getScoreboardName());
+        assignToTeam(server, scoreboard, revealTeam, player.getScoreboardName());
         player.setGlowingTag(true);
     }
 
@@ -79,7 +79,7 @@ public final class RevealGlowManager {
         Scoreboard scoreboard = server.getScoreboard();
         PlayerTeam hiddenTeam = ensureTeam(scoreboard, HIDDEN_TEAM_NAME, Team.Visibility.NEVER, ChatFormatting.WHITE);
         if (hiddenTeam != null) {
-            assignToTeam(scoreboard, hiddenTeam, player.getScoreboardName());
+            assignToTeam(server, scoreboard, hiddenTeam, player.getScoreboardName());
         }
         player.setGlowingTag(false);
     }
@@ -91,13 +91,17 @@ public final class RevealGlowManager {
         }
     }
 
-    private static void assignToTeam(Scoreboard scoreboard, PlayerTeam targetTeam, String scoreHolder) {
+    private static void assignToTeam(MinecraftServer server, Scoreboard scoreboard, PlayerTeam targetTeam, String scoreHolder) {
         PlayerTeam currentTeam = scoreboard.getPlayersTeam(scoreHolder);
         if (currentTeam != null && currentTeam != targetTeam) {
             scoreboard.removePlayerFromTeam(scoreHolder, currentTeam);
         }
         if (currentTeam != targetTeam) {
             scoreboard.addPlayerToTeam(scoreHolder, targetTeam);
+            // Broadcast team change immediately to all online players
+            if (server != null) {
+                broadcastTeamChange(server, targetTeam);
+            }
         }
     }
 

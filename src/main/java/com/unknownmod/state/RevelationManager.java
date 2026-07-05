@@ -373,6 +373,10 @@ public final class RevelationManager {
             return false;
         }
 
+        // Устанавливаем custom name с красным цветом для чата и name tags
+        String originalName = IdentityStore.getOriginalName(target.getUUID()).orElse(target.getName().getString());
+        target.setCustomName(net.minecraft.network.chat.Component.literal(originalName).withStyle(net.minecraft.ChatFormatting.RED));
+
         long now = System.currentTimeMillis();
         state.setActiveReveal(target.getUUID(), target.getName().getString(), now + durationMillis(config));
         ProfileApplier.refreshAllOnline(server);
@@ -432,6 +436,13 @@ public final class RevelationManager {
 
             if (state.removeReveal(uuid)) {
                 RevealGlowManager.clearReveal(server, uuid);
+                
+                // Очищаем custom name при cancel reveal
+                ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+                if (player != null) {
+                    player.setCustomName(null);
+                }
+                
                 changed = true;
             }
         }

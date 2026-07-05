@@ -22,6 +22,7 @@ public final class AppearanceSyncManager {
     private static final String HIDDEN_TEAM_NAME = "unk_hidden";
     private static final String REVEAL_TEAM_NAME = "unk_revealed";
     private static final ConcurrentLinkedQueue<UUID> PENDING_VIEWER_SYNC = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentLinkedQueue<UUID> PENDING_PLAYER_INFO_SYNC = new ConcurrentLinkedQueue<>();
 
     private AppearanceSyncManager() {
     }
@@ -64,6 +65,12 @@ public final class AppearanceSyncManager {
         }
     }
 
+    public static void queuePlayerInfoSync(ServerPlayer player) {
+        if (player != null) {
+            PENDING_PLAYER_INFO_SYNC.add(player.getUUID());
+        }
+    }
+
     private static void syncScoreboard(MinecraftServer server) {
         RevealGlowManager.syncPlayerVisibility(server);
 
@@ -97,20 +104,32 @@ public final class AppearanceSyncManager {
     }
 
     private static void onServerTick(MinecraftServer server) {
-        List<UUID> drained = new ArrayList<>();
+        List<UUID> drainedViewers = new ArrayList<>();
         UUID uuid;
         while ((uuid = PENDING_VIEWER_SYNC.poll()) != null) {
-            drained.add(uuid);
+            drainedViewers.add(uuid);
         }
 
-        if (drained.isEmpty()) {
+        List<UUID> drainedPlayers = new ArrayList<>();
+        while ((uuid = PENDING_PLAYER_INFO_SYNC.poll()) != null) {
+            drainedPlayers.add(uuid);
+        }
+
+        if (drainedViewers.isEmpty() && drainedPlayers.isEmpty()) {
             return;
         }
 
-        for (UUID pendingUuid : drained) {
+        for (UUID pendingUuid : drainedViewers) {
             ServerPlayer viewer = server.getPlayerList().getPlayer(pendingUuid);
             if (viewer != null) {
                 syncViewer(server, viewer);
+            }
+        }
+
+        for (UUID pendingUuid : drainedPlayers) {
+            ServerPlayer player = server.getPlayerList().getPlayer(pendingUuid);
+            if (player != null) {
+                syncPlayer(server, player);
             }
         }
     }

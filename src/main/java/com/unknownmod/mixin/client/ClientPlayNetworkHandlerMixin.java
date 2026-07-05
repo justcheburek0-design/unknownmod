@@ -58,7 +58,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
             GameProfile incomingProfile = mergePreservingTextures(player.getGameProfile(), listEntry.getProfile());
             if (needsRefresh(player.getGameProfile(), incomingProfile)) {
-                PlayerEntityAccessor.setGameProfile(player, incomingProfile);
+                com.unknownmod.util.GameProfileUtil.setGameProfile(player, incomingProfile);
             }
         }
     }

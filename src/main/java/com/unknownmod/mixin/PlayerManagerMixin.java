@@ -5,6 +5,8 @@ import com.unknownmod.state.IdentityStore;
 import com.unknownmod.state.PlayerHistoryStateManager;
 import com.unknownmod.state.RevelationManager;
 import com.unknownmod.state.ServerContextHolder;
+import com.unknownmod.util.AppearanceSyncManager;
+import com.unknownmod.util.RevealGlowManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.players.PlayerList;
@@ -32,15 +34,24 @@ public abstract class PlayerManagerMixin {
     private void unknownmod$onPlayerJoin(net.minecraft.network.Connection connection, ServerPlayer player, CommonListenerCookie cookie, CallbackInfo ci) {
         java.util.UUID uuid = player.getUUID();
 
-        // Запоминаем оригинальный профиль
-        IdentityStore.remember(player.getGameProfile());
+        // НЕ перезаписываем IdentityStore — оригинальный профиль уже запомнен в ServerLoginNetworkHandlerMixin
+        // IdentityStore.remember(player.getGameProfile()); // REMOVED: player уже анонимный!
 
         ServerContextHolder.setServer(server);
-        
+
         // Record join in history (silently, no broadcast)
         java.util.Optional<String> originalNameOpt = IdentityStore.getOriginalName(uuid);
         String originalName = originalNameOpt.orElse(player.getName().getString());
         PlayerHistoryStateManager.getServerState(server).recordJoin(uuid, originalName, System.currentTimeMillis());
+
+        // Sync glow teams for the joining player (in case reveal is active)
+        if (server.getScoreboard().getPlayerTeam("unk_revealed") != null) {
+            RevealGlowManager.syncPlayerVisibility(server);
+        }
+
+        // Vanilla may send tracking/spawn player-info before our packet filter sees every viewer path.
+        // Re-broadcast this player's player-info on the next tick so nearby viewers get the masked profile immediately.
+        AppearanceSyncManager.queuePlayerInfoSync(player);
     }
 
     // Suppress the join broadcast sent by vanilla placeNewPlayer

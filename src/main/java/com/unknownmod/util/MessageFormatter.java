@@ -50,6 +50,18 @@ public final class MessageFormatter {
         for (int i = 0; i < placeholders.length; i++) {
             result = result.replace("{" + i + "}", String.valueOf(placeholders[i]));
         }
+
+        // Support named placeholders passed as key/value pairs:
+        // format("%time% осталось", "time", "1м 30с") -> "1м 30с осталось"
+        for (int i = 0; i + 1 < placeholders.length; i += 2) {
+            String key = String.valueOf(placeholders[i]);
+            String value = String.valueOf(placeholders[i + 1]);
+            if (!key.isBlank()) {
+                result = result
+                        .replace("%" + key + "%", value)
+                        .replace("{" + key + "}", value);
+            }
+        }
         return result;
     }
 

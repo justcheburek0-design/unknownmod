@@ -21,6 +21,11 @@ import java.util.UUID;
 
 public final class ProfileApplier {
     private static final String LOG_PREFIX = "[profile]";
+    // Built-in fallback texture for classic Steve. Unsigned, but valid for client-side skin lookup.
+    private static final Property FALLBACK_STEVE_TEXTURE = new Property(
+            "textures",
+            "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvMWE0YWY3MTg0NTVkNGFhYjUyOGU3YTYxZjg2ZmEyNWU2YTNiMThlNjNmNTQ4MWM3NzEzNzNiZTJlZjEzIn19fQ=="
+    );
     private ProfileApplier() {
     }
 
@@ -123,14 +128,40 @@ public final class ProfileApplier {
      * whether the client has the mod installed.
      */
     public static boolean anonymizePlayerInfoPacket(MinecraftServer server, ClientboundPlayerInfoUpdatePacket packet, UnknownConfig config) {
+        return anonymizePlayerInfoPacket(server, packet, config, null);
+    }
+
+    public static boolean anonymizePlayerInfoPacket(MinecraftServer server, ClientboundPlayerInfoUpdatePacket packet, UnknownConfig config, UUID viewerUuid) {
         List<ClientboundPlayerInfoUpdatePacket.Entry> originalEntries = packet.entries();
         List<ClientboundPlayerInfoUpdatePacket.Entry> patchedEntries = null;
 
         for (int i = 0; i < originalEntries.size(); i++) {
             ClientboundPlayerInfoUpdatePacket.Entry entry = originalEntries.get(i);
 
-            // Skip revealed players
-            if (server != null && RevelationManager.isRevealed(server, entry.profileId())) {
+            // Revealed players and the viewer's own entry must keep their original name/skin.
+            if ((server != null && RevelationManager.isRevealed(server, entry.profileId()))
+                    || (viewerUuid != null && entry.profileId().equals(viewerUuid))) {
+                GameProfile originalProfile = IdentityStore.get(entry.profileId()).orElse(entry.profile());
+                Component originalDisplayName = IdentityStore.getOriginalName(entry.profileId())
+                        .<Component>map(Component::literal)
+                        .orElse(entry.displayName());
+
+                ClientboundPlayerInfoUpdatePacket.Entry newEntry = new ClientboundPlayerInfoUpdatePacket.Entry(
+                        entry.profileId(),
+                        originalProfile,
+                        entry.listed(),
+                        entry.latency(),
+                        entry.gameMode(),
+                        originalDisplayName,
+                        entry.showHat(),
+                        entry.listOrder(),
+                        entry.chatSession()
+                );
+
+                if (patchedEntries == null) {
+                    patchedEntries = new java.util.ArrayList<>(originalEntries);
+                }
+                patchedEntries.set(i, newEntry);
                 continue;
             }
 
@@ -141,11 +172,8 @@ public final class ProfileApplier {
                     ? config.anonymous.name
                     : "JustPlayer";
 
-            // Determine skin: config > original
+            // Determine skin: config/fetched/fallback only. Never use original player textures for hidden players.
             Property texturesProp = resolveTextures(config);
-            if (texturesProp == null) {
-                texturesProp = getTextures(originalProfile);
-            }
 
             // Build new GameProfile with anonymous name + skin
             Multimap<String, Property> multimap = HashMultimap.create();
@@ -214,36 +242,38 @@ public final class ProfileApplier {
 
     /**
      * Apply current profile state for a player.
-     * NOTE: We no longer mutate the server-side gameProfile directly.
-     * All anonymity is handled via PacketS2CFilterMixin which intercepts
-     * outgoing ClientboundPlayerInfoUpdatePacket packets and anonymizes them.
-     * This method only triggers a packet resync so clients see the latest state.
+     * Chooses between anonymous and original profile based on reveal state.
      */
     public static void applyCurrentProfile(MinecraftServer server, ServerPlayer player, UnknownConfig config) {
-        // Profile mutability removed — packet-level anonymization is the single source of truth.
-        // Just trigger appearance sync to resend player info packets.
-        DebugMessenger.debug(server, LOG_PREFIX + " applyCurrentProfile called for " + player.getName().getString()
-                + "; revealed=" + RevelationManager.isRevealed(server, player.getUUID()) + ".");
+        if (server == null || player == null) return;
+
+        boolean revealed = RevelationManager.isRevealed(server, player.getUUID());
+        if (revealed) {
+            applyOriginalProfile(player);
+        } else {
+            applyAnonymousProfile(server, player, config);
+        }
+
+        DebugMessenger.debug(server, LOG_PREFIX + " applyCurrentProfile for " + player.getName().getString()
+                + "; revealed=" + revealed + ".");
     }
 
     /**
-     * @deprecated Use packet-level anonymization via PacketS2CFilterMixin instead.
-     * Restoring the original profile on the server side is no longer needed
-     * because we never mutate it in the first place.
+     * @deprecated Server-side GameProfile is intentionally never mutated.
+     * Packet-level anonymization handles reveal/anonymous state instead.
      */
     @Deprecated
     public static boolean applyOriginalProfile(ServerPlayer player) {
-        // No-op: server profile is never mutated, so no need to restore.
         DebugMessenger.debug(null, LOG_PREFIX + " applyOriginalProfile is a no-op (server profile unchanged) for uuid " + player.getUUID() + ".");
         return true;
     }
 
     /**
-     * @deprecated Use packet-level anonymization via PacketS2CFilterMixin instead.
+     * @deprecated Server-side GameProfile is intentionally never mutated.
+     * Packet-level anonymization handles names and skins.
      */
     @Deprecated
     public static void applyAnonymousProfile(MinecraftServer server, ServerPlayer player, UnknownConfig config) {
-        // No-op: packet-level anonymization handles everything.
         DebugMessenger.debug(server, LOG_PREFIX + " applyAnonymousProfile is a no-op (packet-level anonymization) for " + player.getName().getString() + ".");
     }
 
@@ -281,7 +311,7 @@ public final class ProfileApplier {
     public static Property resolveTextures(UnknownConfig config) {
         if (config.anonymous == null || config.anonymous.skin == null) {
             DebugMessenger.debug(null, LOG_PREFIX + " resolveTextures skipped: anonymous skin section missing.");
-            return null;
+            return FALLBACK_STEVE_TEXTURE;
         }
 
         UnknownConfig.SkinSettings skin = config.anonymous.skin;
@@ -291,9 +321,22 @@ public final class ProfileApplier {
             return new Property("textures", skin.texture, skin.signature);
         }
 
-        DebugMessenger.debug(null, LOG_PREFIX + " resolveTextures returned null; texturePresent=" + (skin.texture != null && !skin.texture.isBlank())
+        String anonymousName = config.anonymous.name;
+        if (anonymousName != null && !anonymousName.isBlank()) {
+            SkinFetcher.SkinData fetched = SkinFetcher.fetchTexturesByNickname(anonymousName);
+            if (fetched != null && fetched.value != null && !fetched.value.isBlank()
+                    && fetched.signature != null && !fetched.signature.isBlank()) {
+                skin.texture = fetched.value;
+                skin.signature = fetched.signature;
+                ConfigManager.save();
+                DebugMessenger.debug(null, LOG_PREFIX + " resolveTextures fetched and cached skin for anonymous name '" + anonymousName + "'.");
+                return new Property("textures", fetched.value, fetched.signature);
+            }
+        }
+
+        DebugMessenger.debug(null, LOG_PREFIX + " resolveTextures using built-in fallback Steve texture; texturePresent=" + (skin.texture != null && !skin.texture.isBlank())
                 + ", signaturePresent=" + (skin.signature != null && !skin.signature.isBlank()) + ".");
-        return null;
+        return FALLBACK_STEVE_TEXTURE;
     }
 
     private static String describeProfileTextures(GameProfile profile) {

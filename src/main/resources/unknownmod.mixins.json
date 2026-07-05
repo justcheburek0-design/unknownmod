@@ -6,11 +6,13 @@
   "mixins": [
     "PlayerManagerMixin",
     "PlayerManagerAccessor",
+    "PlayerEntityMixin",
     "ServerLoginNetworkHandlerMixin",
     "ServerPlayNetworkHandlerMixin",
-    "PlayerEntityAccessor",
     "GameProfileAccessor",
-    "PlayerListS2CPacketAccessor"
+    "PlayerListS2CPacketAccessor",
+    "TabListFilterMixin",
+    "server.ServerGamePacketListenerAccessor"
   ],
   "client": [
     "client.AbstractClientPlayerEntityMixin",
