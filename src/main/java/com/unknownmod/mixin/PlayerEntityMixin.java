@@ -6,19 +6,15 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /**
- * Class-type mixin on Player that makes it implement PlayerEntityAccessor.
- * Uses class-type @Mixin (NOT interface-type), avoiding Sodium conflict.
- * 
- * The @Accessor methods are injected directly into Player.class and
- * satisfy the PlayerEntityAccessor interface contract.
+ * Accessor mixin for Player.gameProfile.
+ * Abstract class with @Accessor — generates accessor methods at compile time
+ * without requiring any interface or @Implements.
  */
 @Mixin(Player.class)
-public abstract class PlayerEntityMixin implements PlayerEntityAccessor {
+public abstract class PlayerEntityMixin {
     @Accessor("gameProfile")
-    @Override
-    public abstract GameProfile getGameProfile();
+    public static native GameProfile getGameProfile(Player player);
 
     @Accessor("gameProfile")
-    @Override
-    public abstract void setGameProfile(GameProfile profile);
+    public static native void setGameProfile(Player player, GameProfile profile);
 }
