@@ -16,8 +16,8 @@ import org.spongepowered.asm.mixin.Interface;
 @Implements(@Interface(iface = PlayerEntityAccessor.class, prefix = "unknownmod$"))
 public abstract class PlayerEntityMixin {
     @Accessor("gameProfile")
-    protected abstract GameProfile unknownmod$getGameProfile();
+    public abstract GameProfile unknownmod$getGameProfile();
 
     @Accessor("gameProfile")
-    protected abstract void unknownmod$setGameProfile(GameProfile profile);
+    public abstract void unknownmod$setGameProfile(GameProfile profile);
 }
