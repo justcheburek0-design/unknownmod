@@ -3,7 +3,6 @@ package com.unknownmod.mixin.client;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.unknownmod.util.ProfileApplier;
-import com.unknownmod.mixin.PlayerEntityMixin;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.Minecraft;
