@@ -2,7 +2,7 @@ fn unknownmod_packet(game:&mut crate::game::Game<'_>,packet:&horizon_protocol::p
     use horizon_protocol::packets::play::Clientbound as C;
     use crate::game::unknownmod_client as state;
     match packet {
-        C::Login(_)=>state::clear(),
+        C::Login(_)=>{state::clear();state::menu_clear();},
         C::PlayerInfoUpdate(info) if info.actions&1!=0=>{
             for entry in &info.entries {
                 state::player(entry.uuid,entry.properties.iter().any(|p|p.name=="unknownmod_anonymous"&&p.value=="1"));

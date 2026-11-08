@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 pub mod shared;
+pub mod audit;
+pub mod ui;
 
 pub type PlayerId = u128;
 pub const COMBAT_MILLIS: u64 = 30_000;
@@ -30,6 +32,7 @@ pub struct Player {
     pub ghost: bool,
     pub previous_mode: Option<i32>,
     pub last_seen: u64,
+    pub last_decision: Option<audit::Decision>,
     #[serde(skip)] pub online: bool,
     #[serde(skip)] pub mode: i32,
 }
@@ -57,6 +60,7 @@ pub struct State {
     pub players: BTreeMap<PlayerId, Player>,
     pub reveals: BTreeMap<PlayerId, Reveal>,
     pub next_reveal_at: u64,
+    #[serde(skip)] pub pending_audit: Vec<audit::Decision>,
     #[serde(skip)] combat: BTreeMap<PlayerId, Combat>,
 }
 
@@ -143,17 +147,37 @@ impl State {
         let player = self.players.get_mut(&id)?;
         if !player.ghost { return None; }
         player.ghost = false;
-        player.mode = player.previous_mode.take().filter(|&mode| mode != 3).unwrap_or(0);
-        Some(player.mode)
+        player.mode = player.previous_mode.filter(|&mode| mode != 3).unwrap_or(0);
+        // Retain the desired mode until the game adapter applies it. An
+        // offline restoration must survive both reconnect and server restart.
+        player.previous_mode = Some(player.mode);
+        let mode = player.mode;
+        let decision = audit::Decision { time: 0, cause: audit::Cause::Restore, victim: id,
+            victim_name: player.name.clone(), attacker: None, attacker_name: None,
+            weapon: None, matched: false, eliminated: false };
+        player.last_decision = Some(decision.clone());
+        self.pending_audit.push(decision);
+        Some(mode)
     }
 
     pub fn death(&mut self, victim: PlayerId, attacker: Option<PlayerId>, weapon: Option<&str>) -> bool {
+        self.death_at(victim, attacker, weapon, 0, audit::Cause::Death)
+    }
+
+    pub fn death_at(&mut self, victim: PlayerId, attacker: Option<PlayerId>, weapon: Option<&str>, time: u64, cause: audit::Cause) -> bool {
         self.combat.remove(&victim);
-        let Some(attacker) = attacker.filter(|&id| id != victim) else { return false; };
-        if !self.players.contains_key(&attacker) { return false; }
+        let attacker = attacker.filter(|&id| id != victim && self.players.contains_key(&id));
         let matches = self.players.get(&victim).is_some_and(|p|
-            weapon.is_some_and(|weapon| matches_name(weapon, &p.name)));
-        matches && self.make_ghost(victim)
+            attacker.is_some() && weapon.is_some_and(|weapon| matches_name(weapon, &p.name)));
+        let eliminated = matches && self.make_ghost(victim);
+        if let Some(player) = self.players.get(&victim) {
+            let decision = audit::Decision { time, cause, victim, victim_name: player.name.clone(), attacker,
+                attacker_name: attacker.and_then(|id| self.players.get(&id)).map(|p| p.name.clone()),
+                weapon: weapon.map(|w| w.chars().take(512).collect()), matched: matches, eliminated };
+            self.players.get_mut(&victim).unwrap().last_decision = Some(decision.clone());
+            self.pending_audit.push(decision);
+        }
+        eliminated
     }
 
     pub fn leave(&mut self, id: PlayerId, wall_time: u64, combat_time: u64, stopping: bool) -> Logout {
@@ -166,8 +190,8 @@ impl State {
         let mut result = Logout::Safe;
         if !stopping && active && let Some(tag) = tag.filter(|tag| tag.expires_at > combat_time) {
             result = Logout::Death;
-            if let Some(hit) = tag.incoming.filter(|hit| hit.expires_at > combat_time)
-                && self.death(id, Some(hit.attacker), hit.weapon.as_deref()) {
+            let hit = tag.incoming.filter(|hit| hit.expires_at > combat_time);
+            if self.death_at(id, hit.as_ref().map(|h| h.attacker), hit.as_ref().and_then(|h| h.weapon.as_deref()), wall_time, audit::Cause::CombatLogout) {
                 result = Logout::Eliminated;
             }
         }

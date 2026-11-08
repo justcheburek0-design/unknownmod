@@ -36,13 +36,13 @@ def hook(text, function, body):
 
 def main():
     (SRC/'game').mkdir(parents=True,exist_ok=True)
-    patch('Cargo.toml',lambda t:t+'\n# UnknownMod native development profile (upstream recommends unoptimized game code).\n[profile.fast.package.horizon-client]\nopt-level = 0\n')
+    patch('Cargo.toml',lambda t:t+'\n# UnknownMod native development profile; world/render dependencies stay optimized.\n[profile.fast.package.horizon-client]\nopt-level = 0\n[profile.fast.package.horizon-client-lib]\nopt-level = 0\n')
     core = (ROOT/'horizon/unknownmod').as_posix()
     for crate in ['horizon-client','horizon-client-lib']:
         patch(f'crates/{crate}/Cargo.toml', lambda t:replace(t,'[dependencies]',f'[dependencies]\nunknownmod_rules = {{ path = "{core}" }}'))
     patch('crates/horizon-client/src/client_lib.rs',lambda t:t+'\npub mod unknown_wire;\n')
     patch('crates/horizon-client/src/game.rs',lambda t:t+'\nmod unknownmod;\n')
-    shutil.copyfile(ROOT/'horizon/unknown-game.rs',SRC/'game/unknownmod.rs')
+    (SRC/'game/unknownmod.rs').write_text((ROOT/'horizon/unknown-game.rs').read_text(encoding='utf-8')+'\n'+(ROOT/'horizon/unknown-ui.rs').read_text(encoding='utf-8'),encoding='utf-8')
     shutil.copyfile(ROOT/'horizon/unknown-wire.rs',SRC/'unknown_wire.rs')
     shutil.copyfile(ROOT/'src/main/resources/assets/unknownmod/textures/entity/player/anonymous.png',SRC/'game/unknown-anonymous.png')
     from PIL import Image
@@ -84,6 +84,7 @@ def main():
                             let n=if unknownmod_rules::shared::hidden(u) {unknownmod_rules::shared::anonymous_name()} else {n};'''))
     def hooks(t):
         for fn, body in [
+            ('native_net_from_client','self.unknownmod_ui(player,channel,data);'),
             ('native_server_tick','if matches!(phase, ServerTickPhase::ServerTickEnd { .. }) { self.unknownmod_tick(); }'),
             ('native_server_stopping','self.unknownmod_stopping();'),
             ('native_player_logged_in','self.unknownmod_join(player,name);'),

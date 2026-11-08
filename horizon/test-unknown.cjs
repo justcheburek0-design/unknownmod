@@ -24,7 +24,7 @@ class Reader{
 }
 class Bot{
  constructor(name){
-  this.name=name;this.profiles=new Map();this.entities=new Map();this.events=[];this.health=20;this.joined=false;this.closed=false;
+  this.name=name;this.profiles=new Map();this.entities=new Map();this.events=[];this.menus=[];this.health=20;this.joined=false;this.closed=false;
   const uuid=crypto.createHash('md5').update('OfflinePlayer:'+name).digest();uuid[6]=(uuid[6]&15)|48;uuid[8]=(uuid[8]&63)|128;this.uuid=uuid.toString('hex');
   this.socket=net.createConnection({host:'127.0.0.1',port});this.state='login';this.compression=null;this.buffer=Buffer.alloc(0);
   this.socket.on('connect',()=>{const p=Buffer.alloc(2);p.writeUInt16BE(port);this.send(0,Buffer.concat([vi(777),str('localhost'),p,vi(2)]));this.send(0,Buffer.concat([str(name),uuid]));});
@@ -37,7 +37,7 @@ class Bot{
  packet(type,body){
   if(this.state==='login'){
    if(type==='CLIENTBOUND_LOGIN_COMPRESSION')this.compression=variable(body)[0];
-   if(type==='CLIENTBOUND_LOGIN_FINISHED'){this.named('SERVERBOUND_LOGIN_ACKNOWLEDGED');this.state='configuration'}
+   if(type==='CLIENTBOUND_LOGIN_FINISHED'){this.named('SERVERBOUND_LOGIN_ACKNOWLEDGED');this.state='configuration';this.named('SERVERBOUND_CUSTOM_PAYLOAD',Buffer.concat([str('minecraft:brand'),str('horizon')]))}
   }else if(this.state==='configuration'){
    if(type==='CLIENTBOUND_PING')this.named('SERVERBOUND_PONG',body);
    if(type==='CLIENTBOUND_KEEP_ALIVE')this.named('SERVERBOUND_KEEP_ALIVE',body);
@@ -53,6 +53,9 @@ class Bot{
    if(type==='CLIENTBOUND_GAME_EVENT'&&body[0]===3)this.mode=body.readFloatBE(1);
    if(type==='CLIENTBOUND_SYSTEM_CHAT')this.events.push({type:'chat',text:JSON.stringify(new Reader(body).nbt())});
    if(type==='CLIENTBOUND_PLAYER_INFO_UPDATE')this.profilePacket(body);
+   if(type==='CLIENTBOUND_CUSTOM_PAYLOAD'){
+    const r=new Reader(body);if(r.str()==='horizon:mod_net'&&r.str()==='unknownmod:menu'){const n=r.vi();this.menus.push(JSON.parse(body.subarray(r.o,r.o+n).toString()));}
+   }
    if(type==='CLIENTBOUND_DISCONNECT')this.error='kicked '+body.toString('hex').slice(0,180);
   }
  }
@@ -65,6 +68,7 @@ class Bot{
  attack(victim){this.named('SERVERBOUND_ATTACK',vi(victim.entity))}
  respawn(){this.named('SERVERBOUND_CLIENT_COMMAND',vi(0))}
  command(text){this.named('SERVERBOUND_CHAT_COMMAND',str(text))}
+ menuRequest(request){const data=Buffer.from(JSON.stringify(request));this.named('SERVERBOUND_CUSTOM_PAYLOAD',Buffer.concat([str('horizon:mod_net'),str('unknownmod:menu'),vi(data.length),data]))}
  disconnect(){this.socket.end()}
 }
 function cmd(command){return execFileSync(supervisor,['cmd',command,'--dir',server],{encoding:'utf8',windowsHide:true,timeout:15000}).trim()}

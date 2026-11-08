@@ -43,4 +43,4 @@ function connect(name){
  });
 }
 readline.createInterface({input:process.stdin}).on('line',line=>{try{const cmd=JSON.parse(line),c=bots.get(cmd.name);if(cmd.action==='connect')connect(cmd.name);if(cmd.action==='disconnect')c?.socket.end();if(cmd.action==='suggest')c?.sendNamed('SERVERBOUND_COMMAND_SUGGESTION',Buffer.concat([vi(cmd.id||1),str(cmd.text)]));if(cmd.action==='respawn')c?.sendNamed('SERVERBOUND_CLIENT_COMMAND',vi(0));if(cmd.action==='quit'){for(const c of bots.values())c.socket.end();setTimeout(()=>process.exit(),100)}}catch(e){log('commandError',{error:e.message})}});
-connect('TestPlayer26');
+for(const name of (process.argv.length>2?process.argv.slice(2):['TestPlayer26']))connect(name);

@@ -17,6 +17,7 @@ shutil.copyfile(BUILD/'client-mod-source/LICENSE',DEST/'LICENSE-Horizon')
 image=Image.open(ROOT/'src/main/resources/assets/unknownmod/textures/entity/player/anonymous.png').convert('RGBA')
 assert image.size==(64,64)
 runtime=(DEST/'runtime.rs').read_text(encoding='utf-8')
+runtime+='\n'+(ROOT/'horizon/client-mod/ui.rs').read_text(encoding='utf-8')
 runtime+='\npub(super) const ANONYMOUS_RGBA:&[u8]=&['+','.join(map(str,image.tobytes()))+'];\n'
 (DEST/'runtime.rs').write_text(runtime,encoding='utf-8')
 
@@ -47,7 +48,7 @@ body=re.sub(r'\bself\b','game',body)
 (DEST/'skins.rs').write_text("fn unknownmod_skins(game:&mut crate::game::Game<'_>)->core::ops::ControlFlow<()> {\n    let run=|game:&mut crate::game::Game<'_>| {"+body+"\n    };\n    run(game);\n    core::ops::ControlFlow::Break(())\n}\n",encoding='utf-8')
 manifest=f'''[mod]
 id = "{MOD}"
-version = "6.0.0"
+version = "6.1.0"
 priority = 10
 
 [compatibility]
@@ -71,9 +72,14 @@ injection('packet','HEAD',"horizon_client::game::remote::Game<'_>::handle_packet
 injection('skins','HEAD',"horizon_client::game::remote::Game<'_>::update_remote_skins",[game],cancellable=True)
 injection('name','HEAD',"horizon_client::game::native_hooks::Game<'_>::native_render_name_tag",[('entity_id','u32','entity_id'),('kind','&str','kind'),('visible','&mut bool','&mut *visible')])
 injection('list','HEAD',"horizon_client::game::native_hooks::Game<'_>::native_mods",[('mods','&mut Vec<crate::game::native_hooks::NativeMod>','&mut *mods')])
+injection('settings','HEAD',"horizon_client::game::native_hooks::Game<'_>::native_settings",[('mod_id','&str','mod_id'),('buttons','&mut Vec<String>','&mut *buttons')])
+injection('click','HEAD',"horizon_client::game::native_hooks::Game<'_>::native_settings_click",[game,('mod_id','&str','mod_id'),('button','usize','button')])
+injection('key','HEAD',"horizon_client::game::native_hooks::Game<'_>::native_key",[game,('key','&str','key'),('pressed','bool','pressed')])
+injection('frame','HEAD',"horizon_client::game::native_hooks::Game<'_>::native_frame",[game])
+injection('net','HEAD',"horizon_client::game::native_hooks::Game<'_>::native_net_from_server",[game,('channel','&str','channel'),('data','&[u8]','data')])
 (DEST/'horizon-mixin.toml').write_text(manifest,encoding='utf-8')
-metadata={'schema':1,'id':MOD,'version':'6.0.0','game':'26.3','horizon':PIN,'mixins':MIXINS}
-output=BUILD/'packages/UnknownMod-6.0.0-client.hnmod'
+metadata={'schema':1,'id':MOD,'version':'6.1.0','game':'26.3','horizon':PIN,'mixins':MIXINS}
+output=BUILD/'packages/UnknownMod-6.1.0-client.hnmod'
 output.parent.mkdir(parents=True,exist_ok=True)
 with zipfile.ZipFile(output,'w',zipfile.ZIP_DEFLATED) as archive:
     entries={'horizon-native.json':(json.dumps(metadata,indent=2)+'\n').encode()}

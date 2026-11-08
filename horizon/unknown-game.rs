@@ -11,6 +11,7 @@ struct Runtime {
     entities: BTreeMap<u32,u128>, modes: Vec<(u128,i32)>, refresh: bool,
     messages: Vec<String>, last_second: u64, winner: Option<String>,
     profiles: BTreeMap<u128,(TextureProperty,u64)>,
+    ui_requests: BTreeMap<(u128,bool),u64>,
 }
 fn runtime() -> &'static Mutex<Runtime> {
     static RUNTIME: OnceLock<Mutex<Runtime>> = OnceLock::new();
@@ -25,6 +26,20 @@ fn write_json(path: PathBuf, value: &impl serde::Serialize) -> Result<(),String>
     std::fs::rename(&temporary, &path).map_err(|e|e.to_string())
 }
 impl Runtime {
+    fn flush_audit(&mut self) {
+        use std::io::Write;
+        if self.state.pending_audit.is_empty() || self.root.as_os_str().is_empty() { return; }
+        let result=(||->Result<(),String>{
+            let mut lines=Vec::new();
+            for entry in &self.state.pending_audit {
+                let mut entry=entry.clone();if entry.time==0 {entry.time=shared::wall_time();}
+                serde_json::to_writer(&mut lines,&entry).map_err(|e|e.to_string())?;lines.push(b'\n');
+            }
+            let mut file=std::fs::OpenOptions::new().create(true).append(true).open(self.root.join("audit.jsonl")).map_err(|e|e.to_string())?;
+            file.write_all(&lines).and_then(|_|file.sync_data()).map_err(|e|e.to_string())
+        })();
+        match result {Ok(())=>self.state.pending_audit.clear(),Err(e)=>log::error!("UnknownMod audit write failed: {e}")}
+    }
     fn save(&self) {
         if self.root.as_os_str().is_empty() { return; }
         let now=shared::wall_time();let mut durable=self.state.clone();
@@ -36,7 +51,7 @@ impl Runtime {
         if let Err(e) = result { log::error!("UnknownMod: save failed: {e}"); }
     }
     fn publish(&self) { shared::publish(&self.state,&self.config); }
-    fn changed(&mut self) { self.refresh=true; self.publish(); self.save(); }
+    fn changed(&mut self) { self.flush_audit(); self.refresh=true; self.publish(); self.save(); }
     fn target(&self, name: &str) -> Option<u128> {
         let mut matches = self.state.players.iter().filter(|(_,p)|p.name.eq_ignore_ascii_case(name));
         let id=*matches.next()?.0;
@@ -73,7 +88,7 @@ impl Game<'_> {
         let config=rt.config.clone(); rt.state.configure(&config,now,false);
         write_json(rt.root.join("config.json"),&config).expect("UnknownMod config write");
         rt.publish();
-        log::info!("UnknownMod 6.0 enabled: reveal {} min / {} h / minimum {}",config.reveal_duration_minutes,config.reveal_interval_hours,config.minimum_players);
+        log::info!("UnknownMod 6.1 enabled: reveal {} min / {} h / minimum {}",config.reveal_duration_minutes,config.reveal_interval_hours,config.minimum_players);
     }
     pub(super) fn unknownmod_join(&mut self, id:u128, name:&str) {
         if !shared::enabled(){return} self.unknownmod_init();
@@ -81,7 +96,13 @@ impl Game<'_> {
         let original=self.lan.as_ref().and_then(|h|h.hub.guests.iter().find(|g|g.uuid==id))
             .and_then(|g|g.properties.iter().find(|p|p.name=="textures")).cloned();
         let mut rt=lock(); rt.state.join(id,name,mode,shared::wall_time());
+        if let Some(reason)=rt.state.players.get(&id).and_then(|p|p.last_decision.as_ref()).filter(|d|d.eliminated||d.cause==unknownmod_rules::audit::Cause::CombatLogout) {
+            if let Some(g)=self.lan.as_ref().and_then(|h|h.hub.guests.iter().find(|g|g.uuid==id)) {
+                g.send(&C::SystemChat(play::SystemChat{content:component_nbt(&Text::literal(&reason.explanation()).component()),overlay:false}));
+            }
+        }
         if rt.state.players.get(&id).is_some_and(|p|p.ghost){rt.modes.push((id,3));}
+        else if let Some(mode)=rt.state.players.get(&id).and_then(|p|p.previous_mode){rt.modes.push((id,mode));}
         rt.changed();
         let now=shared::wall_time();
         let fetch=original.is_none() && !rt.profiles.get(&id).is_some_and(|(_,expires)|*expires>now);
@@ -130,7 +151,10 @@ impl Game<'_> {
             (std::mem::take(&mut rt.modes),std::mem::take(&mut rt.refresh),std::mem::take(&mut rt.messages),combat)
         };
         if let Some(host)=self.lan.as_mut(){
-            for (id,mode) in modes { if let Some(conn)=host.hub.guests.iter().find(|g|g.uuid==id).map(|g|g.conn){host.hub.set_game_mode(conn,mode,&self.world,None);} }
+            for (id,mode) in modes { if let Some(conn)=host.hub.guests.iter().find(|g|g.uuid==id).map(|g|g.conn){
+                host.hub.set_game_mode(conn,mode,&self.world,None);
+                if let Some(player)=lock().state.players.get_mut(&id){if !player.ghost{player.previous_mode=None;}}
+            } }
             if refresh {
                 let infos=host.hub.guests.iter().filter(|g|g.placed).map(|g|host.hub.player_info(g.uuid,&g.name,g.game_mode,0)).collect::<Vec<_>>();
                 // ADD updates the profile in our client, avoiding removal of tracked entities.
@@ -149,11 +173,16 @@ impl Game<'_> {
     }
     pub(super) fn unknownmod_death(&mut self,host:&LanHost,gi:usize){
         if !shared::enabled(){return} let g=&host.hub.guests[gi]; if g.health>0.0 || g.dead{return}
-        if host.play.get(&g.conn).is_some_and(|p|p.death_cause.is_some()){return}
+        if !lock().state.players.get(&g.uuid).is_some_and(|p|p.online) {return}
+        let environmental=host.play.get(&g.conn).is_some_and(|p|p.death_cause.is_some());
         let blow=self.guest_combat.get(&g.conn).and_then(|c|c.unknownmod_blow());
-        let mut rt=lock();let attacker=blow.as_ref().and_then(|(id,_)|rt.entities.get(id).copied());
-        let weapon=blow.as_ref().and_then(|(_,name)|name.as_deref());
-        if rt.state.death(g.uuid,attacker,weapon){rt.messages.push("Игрок выбыл из эксперимента.".into());rt.changed();}
+        let mut rt=lock();let attacker=if environmental {None}else{blow.as_ref().and_then(|(id,_)|rt.entities.get(id).copied())};
+        let weapon=if environmental {None}else{blow.as_ref().and_then(|(_,name)|name.as_deref())};
+        if rt.state.death_at(g.uuid,attacker,weapon,shared::wall_time(),unknownmod_rules::audit::Cause::Death){rt.messages.push("Игрок выбыл из эксперимента.".into());}
+        if let Some(reason)=rt.state.players.get(&g.uuid).and_then(|p|p.last_decision.as_ref()) {
+            g.send(&C::SystemChat(play::SystemChat{content:component_nbt(&Text::literal(&reason.explanation()).component()),overlay:false}));
+        }
+        rt.changed();
     }
     pub(super) fn unknownmod_leave(&mut self,host:&mut LanHost,gi:usize){
         if !shared::enabled(){return}
@@ -193,7 +222,7 @@ impl Game<'_> {
             if args[0]=="players" {let (recent,old)=rt.state.participant_groups(&rt.config,now);return Ok(format!("За последние 3 дня заходили: {}\nДавно не заходили: {}",recent.join(", "),old.join(", ")));}
             if permission<2{return Err("Нужны права оператора".into())}
             match args.get(1).copied().unwrap_or("status"){
-                "status"=>Ok(format!("UnknownMod 6.0 | раскрытие {} мин, каждые {} ч, минимум {} | раскрыто {} | победитель: {}",rt.config.reveal_duration_minutes,rt.config.reveal_interval_hours,rt.config.minimum_players,rt.state.reveals.len(),rt.winner.as_deref().unwrap_or("ещё нет"))),
+                "status"=>Ok(format!("UnknownMod 6.1 | раскрытие {} мин, каждые {} ч, минимум {} | раскрыто {} | победитель: {}",rt.config.reveal_duration_minutes,rt.config.reveal_interval_hours,rt.config.minimum_players,rt.state.reveals.len(),rt.winner.as_deref().unwrap_or("ещё нет"))),
                 "reveal"|"hide"|"ghost"|"restore"=>{
                     if args.len()==2 {
                         if args[1]=="hide" {rt.state.reveals.clear();rt.changed();return Ok("Все раскрытия завершены.".into())}

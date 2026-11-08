@@ -46,5 +46,22 @@ fn main() {
     let own = wire::masked(&packet, false, 2).unwrap();
     assert!(has(entry(&own, 2), "textures") && !has(entry(&own, 2), wire::ANONYMOUS));
     assert!(has(entry(&packet, 1), "textures") && has(entry(&packet, 2), "textures"));
+    use horizon_world::nbt::Tag;
+    let literal=||Tag::String("Alice".into());
+    let chat=C::SystemChat(horizon_protocol::packets::play::SystemChat{content:literal(),overlay:false});
+    let filtered=wire::masked(&chat,false,2).unwrap();
+    let C::SystemChat(chat)=filtered else {unreachable!()};assert_ne!(chat.content,literal());
+    assert!(wire::masked(&C::SystemChat(chat.clone()),false,2).is_none());
+    let tab=C::TabList(horizon_protocol::packets::play::TabList{header:literal(),footer:literal()});
+    let C::TabList(tab)=wire::masked(&tab,false,2).unwrap()else{unreachable!()};assert_ne!(tab.header,literal());assert_ne!(tab.footer,literal());
+    let score=C::SetScore(horizon_protocol::packets::play::SetScore{owner:"Alice".into(),objective:"points".into(),score:5,display:None,number_format:None});
+    let C::SetScore(score)=wire::masked(&score,false,2).unwrap()else{unreachable!()};assert!(!score.owner.contains("Alice"));assert_ne!(score.display,Some(literal()));
+    let reset=C::ResetScore(horizon_protocol::packets::play::ResetScore{owner:"Alice".into(),objective:None});
+    let C::ResetScore(reset)=wire::masked(&reset,false,2).unwrap()else{unreachable!()};assert_eq!(score.owner,reset.owner);
+    let hidden_uuid=C::PlayerInfoUpdate(PlayerInfoUpdate{actions:1,entries:vec![entry(&packet,1).clone()]});
+    let public=wire::masked(&hidden_uuid,false,2).unwrap();
+    assert_eq!(entry(&public,1).uuid,1); // Known limit: UUID is still the vanilla account/offline UUID.
     println!("PASS: own signed textures preserved; others masked; operator isolation; reveal/unreveal; shared packet unchanged");
+    println!("PASS: literal chat, TAB header/footer, scoreboard owner/display and reset consistency");
+    println!("KNOWN LIMIT: public profile UUIDs are not pseudonymized yet");
 }
