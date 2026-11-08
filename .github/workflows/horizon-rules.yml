@@ -1,0 +1,14 @@
+name: Horizon rules
+on:
+  push:
+    branches: [horizon-6.0]
+    paths: ['horizon/**', '.github/workflows/horizon-rules.yml']
+  pull_request:
+    paths: ['horizon/**', '.github/workflows/horizon-rules.yml']
+jobs:
+  rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --manifest-path horizon/unknownmod/Cargo.toml

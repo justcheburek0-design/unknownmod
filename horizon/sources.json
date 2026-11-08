@@ -1,0 +1,7 @@
+{
+  "minecraft": "26.3",
+  "horizon": {"repository": "https://github.com/horizon-rust/horizon", "commit": "66f3981f522b24c250b21523a70080965b940424", "license": "MIT"},
+  "voice_server": {"repository": "https://github.com/horizon-rust/horizon-mods", "commit": "d2de4c18de0cfc4c1e4f193f2ec09b47adb0d236", "directory": "native/voicechat-server", "license": "MIT"},
+  "voice_client": {"repository": "https://github.com/Frenk1997/horizon-voice", "commit": "3dd997f70d4d3ec547c69bde9416a503783d6357", "license": "MIT AND BSD-3-Clause"},
+  "horizon_mixins": {"repository": "https://github.com/horizon-rust/horizon-mixins", "commit": "e8cd0aa38cffef49cb2e088ef716baa107148c02", "license": "MIT"}
+}

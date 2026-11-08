@@ -1,0 +1,13 @@
+{
+    "asset":  {
+                  "browser_download_url":  "https://github.com/horizon-rust/horizon/releases/download/nightly/horizon-windows-x64.zip",
+                  "api_url":  "https://api.github.com/repos/horizon-rust/horizon/releases/assets/714201488",
+                  "name":  "horizon-windows-x64.zip",
+                  "digest":  "sha256:0e3157a74c56249573f42624d64bc87774324dec1cd20ba6518c784b7293eda0",
+                  "size":  40474460
+              },
+    "published":  "2026-11-05T17:24:59Z",
+    "name":  "Nightly 2026-11-05 · 66f3981",
+    "commit":  "66f3981f522b24c250b21523a70080965b940424",
+    "tag":  "nightly"
+}

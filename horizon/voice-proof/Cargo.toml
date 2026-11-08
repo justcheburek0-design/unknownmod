@@ -1,0 +1,12 @@
+[package]
+name = "unknown-voice-proof"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+horizon_voice_engine = { path = "../../build/horizon/voice-bundles/horizon_voice/engine" }
+voicechat_server_relay = { path = "../../build/horizon/voice-bundles/voicechat_server/relay" }
+
+[profile.release]
+opt-level = 2

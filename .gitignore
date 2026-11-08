@@ -48,3 +48,12 @@ replay_*.log
 # Ignore Gradle build output directory
 build
 
+# Native Horizon build output
+horizon/**/target/
+
+# Local test sessions and credentials
+logs/
+build_error.txt
+.env
+.env.*
+
