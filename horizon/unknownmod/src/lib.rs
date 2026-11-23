@@ -5,6 +5,9 @@ use std::collections::BTreeMap;
 pub mod shared;
 pub mod audit;
 pub mod ui;
+pub mod textures;
+pub mod events;
+pub mod automatic;
 
 pub type PlayerId = u128;
 pub const COMBAT_MILLIS: u64 = 30_000;
@@ -15,12 +18,15 @@ pub struct Config {
     pub reveal_duration_minutes: u32,
     pub reveal_interval_hours: u32,
     pub minimum_players: usize,
+    pub afk_timeout_minutes: u32,
+    pub event_excluded_players: Vec<String>,
+    pub automatic_events: automatic::AutoConfig,
     pub roster: Vec<String>,
     pub anonymous_name: String,
 }
 impl Default for Config {
     fn default() -> Self {
-        Self { reveal_duration_minutes: 90, reveal_interval_hours: 3, minimum_players: 3,
+        Self { reveal_duration_minutes: 90, reveal_interval_hours: 3, minimum_players: 3, afk_timeout_minutes: 5, event_excluded_players: Vec::new(), automatic_events: Default::default(),
                roster: Vec::new(), anonymous_name: "JustPlayer".into() }
     }
 }
@@ -35,6 +41,7 @@ pub struct Player {
     pub last_decision: Option<audit::Decision>,
     #[serde(skip)] pub online: bool,
     #[serde(skip)] pub mode: i32,
+    #[serde(skip)] pub afk: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -57,24 +64,54 @@ struct Combat { expires_at: u64, incoming: Option<IncomingHit> }
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct State {
+    // Missing fields preserve running experiments from releases before start/stop.
+    pub stopped: bool,
+    pub paused_reveal_interval: Option<u64>,
     pub players: BTreeMap<PlayerId, Player>,
     pub reveals: BTreeMap<PlayerId, Reveal>,
     pub next_reveal_at: u64,
     #[serde(skip)] pub pending_audit: Vec<audit::Decision>,
     #[serde(skip)] combat: BTreeMap<PlayerId, Combat>,
+    #[serde(skip)] last_activity: BTreeMap<PlayerId, u64>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Logout { Safe, Death, Eliminated }
 
 impl State {
+    pub fn stop(&mut self, now: u64) -> bool {
+        if self.stopped { return false; }
+        self.stopped = true;
+        self.paused_reveal_interval = (self.next_reveal_at != 0).then(|| self.next_reveal_at.saturating_sub(now));
+        for reveal in self.reveals.values_mut() {
+            *reveal = Reveal::Paused { remaining: reveal.remaining(now) };
+        }
+        self.combat.clear();
+        true
+    }
+
+    pub fn start(&mut self, config: &Config, now: u64) -> bool {
+        if !self.stopped { return false; }
+        self.stopped = false;
+        self.next_reveal_at = now.saturating_add(self.paused_reveal_interval.take()
+            .unwrap_or(u64::from(config.reveal_interval_hours.max(1)) * 3_600_000));
+        for (&id, reveal) in &mut self.reveals {
+            if self.players.get(&id).is_some_and(|p| p.online) {
+                *reveal = Reveal::Running { ends_at: now.saturating_add(reveal.remaining(now)) };
+            }
+        }
+        true
+    }
+
     pub fn join(&mut self, id: PlayerId, name: &str, mode: i32, now: u64) {
         let player = self.players.entry(id).or_default();
         player.name = name.to_owned();
         player.online = true;
         player.mode = mode;
         player.last_seen = now;
-        if let Some(Reveal::Paused { remaining }) = self.reveals.get(&id) {
+        player.afk = false;
+        self.last_activity.remove(&id);
+        if !self.stopped && let Some(Reveal::Paused { remaining }) = self.reveals.get(&id) {
             if *remaining == 0 { self.reveals.remove(&id); }
             else { self.reveals.insert(id, Reveal::Running { ends_at: now.saturating_add(*remaining) }); }
         }
@@ -84,8 +121,40 @@ impl State {
         self.players.get(&id).is_some_and(|p| p.online && !p.ghost && p.mode != 3)
     }
 
+    pub fn record_activity(&mut self, id: PlayerId, now: u64) {
+        if let Some(player) = self.players.get_mut(&id).filter(|p| p.online) {
+            self.last_activity.entry(id).and_modify(|last| *last = (*last).max(now)).or_insert(now);
+            player.afk = false;
+        }
+    }
+
+    pub fn update_afk(&mut self, config: &Config, now: u64) {
+        let timeout = u64::from(config.afk_timeout_minutes.clamp(1, 10080)) * 60_000;
+        for (&id, player) in &mut self.players {
+            player.afk = player.online && now.saturating_sub(*self.last_activity.entry(id).or_insert(now)) >= timeout;
+        }
+    }
+
+    pub fn is_event_participant(&self, id: PlayerId) -> bool {
+        self.is_active(id) && !self.players[&id].afk
+    }
+
+    pub fn online_report(&self) -> String {
+        let mut online = Vec::new();
+        let mut afk = Vec::new();
+        let mut participants = Vec::new();
+        for (&id, player) in &self.players {
+            if !player.online { continue; }
+            if player.afk { afk.push(player.name.clone()); } else { online.push(player.name.clone()); }
+            if self.is_event_participant(id) { participants.push(player.name.clone()); }
+        }
+        for names in [&mut online, &mut afk, &mut participants] { names.sort_by_key(|name| name.to_ascii_lowercase()); }
+        let line = |label: &str, names: &[String]| format!("{label} ({}): {}", names.len(), if names.is_empty() { "—".into() } else { names.join(", ") });
+        format!("На сервере: {}\n{}\n{}\n{}", online.len() + afk.len(), line("Онлайн без AFK", &online), line("AFK", &afk), line("Доступны для ивента", &participants))
+    }
+
     pub fn reveal(&mut self, id: PlayerId, config: &Config, now: u64) -> bool {
-        if !self.is_active(id) || self.reveals.contains_key(&id) { return false; }
+        if self.stopped || !self.is_active(id) || self.reveals.contains_key(&id) { return false; }
         let duration = u64::from(config.reveal_duration_minutes.max(1)) * 60_000;
         self.reveals.insert(id, Reveal::Running { ends_at: now.saturating_add(duration) });
         true
@@ -95,23 +164,31 @@ impl State {
     pub fn configure(&mut self, config: &Config, now: u64, reset_interval: bool) {
         if reset_interval || self.next_reveal_at == 0 {
             self.next_reveal_at = now.saturating_add(u64::from(config.reveal_interval_hours.max(1)) * 3_600_000);
+            if self.stopped { self.paused_reveal_interval = Some(self.next_reveal_at.saturating_sub(now)); }
         }
     }
 
     pub fn expire_reveals(&mut self, now: u64) -> Vec<PlayerId> {
+        if self.stopped { return Vec::new(); }
         let expired: Vec<_> = self.reveals.iter().filter_map(|(&id, r)|
             matches!(r, Reveal::Running { ends_at } if *ends_at <= now).then_some(id)).collect();
         for id in &expired { self.reveals.remove(id); }
         expired
     }
 
+    pub fn next_reveal_seconds(&self, now: u64) -> u64 {
+        if self.stopped { self.paused_reveal_interval.unwrap_or(0).div_ceil(1000) }
+        else { self.next_reveal_at.saturating_sub(now).div_ceil(1000) }
+    }
+
     /// Selection entropy is supplied by the game adapter. Paused/revealed targets
     /// remain participants but cannot be selected for a second simultaneous hunt.
     pub fn automatic_reveal(&mut self, config: &Config, now: u64, selection: usize) -> Option<PlayerId> {
+        if self.stopped { return None; }
         self.configure(config, now, false);
         if now < self.next_reveal_at { return None; }
         self.configure(config, now, true);
-        let active: Vec<_> = self.players.keys().copied().filter(|&id| self.is_active(id)).collect();
+        let active: Vec<_> = self.players.keys().copied().filter(|&id| self.is_event_participant(id)).collect();
         if active.len() < config.minimum_players.max(1) { return None; }
         let eligible: Vec<_> = active.into_iter().filter(|id| !self.reveals.contains_key(id)).collect();
         if eligible.is_empty() { return None; }
@@ -120,7 +197,7 @@ impl State {
     }
 
     pub fn hit(&mut self, attacker: PlayerId, victim: PlayerId, weapon: Option<&str>, now: u64) {
-        if attacker == victim || !self.is_active(attacker) || !self.is_active(victim) { return; }
+        if self.stopped || attacker == victim || !self.is_active(attacker) || !self.is_active(victim) { return; }
         let expires_at = now.saturating_add(COMBAT_MILLIS);
         let incoming = self.combat.get(&attacker).filter(|c| c.expires_at > now)
             .and_then(|c| c.incoming.clone());
@@ -165,6 +242,7 @@ impl State {
     }
 
     pub fn death_at(&mut self, victim: PlayerId, attacker: Option<PlayerId>, weapon: Option<&str>, time: u64, cause: audit::Cause) -> bool {
+        if self.stopped { return false; }
         self.combat.remove(&victim);
         let attacker = attacker.filter(|&id| id != victim && self.players.contains_key(&id));
         let matches = self.players.get(&victim).is_some_and(|p|
@@ -183,12 +261,14 @@ impl State {
     pub fn leave(&mut self, id: PlayerId, wall_time: u64, combat_time: u64, stopping: bool) -> Logout {
         let tag = self.combat.remove(&id);
         let active = self.is_active(id);
+        self.last_activity.remove(&id);
         if let Some(player) = self.players.get_mut(&id) {
             player.online = false;
+            player.afk = false;
             player.last_seen = wall_time;
         }
         let mut result = Logout::Safe;
-        if !stopping && active && let Some(tag) = tag.filter(|tag| tag.expires_at > combat_time) {
+        if !self.stopped && !stopping && active && let Some(tag) = tag.filter(|tag| tag.expires_at > combat_time) {
             result = Logout::Death;
             let hit = tag.incoming.filter(|hit| hit.expires_at > combat_time);
             if self.death_at(id, hit.as_ref().map(|h| h.attacker), hit.as_ref().and_then(|h| h.weapon.as_deref()), wall_time, audit::Cause::CombatLogout) {

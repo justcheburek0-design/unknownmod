@@ -20,7 +20,7 @@ fn main() {
         actions: 1,
         entries: [(1, "Alice"), (2, "Bob")].into_iter().map(|(uuid, name)| PlayerInfo {
             uuid, name: Some(name.into()), properties: vec![Property {
-                name: "textures".into(), value: format!("original-{name}"), signature: Some("signed".into()),
+                name: "textures".into(), value: "eyJwcm9maWxlSWQiOiJyZWFsLXV1aWQiLCJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHBzOi8vdGV4dHVyZXMubWluZWNyYWZ0Lm5ldC90ZXh0dXJlL2FiYyJ9fX0=".into(), signature: Some("signed".into()),
             }], ..Default::default()
         }).collect(),
     });
@@ -31,18 +31,21 @@ fn main() {
             assert!(has(own, "textures") && !has(own, wire::ANONYMOUS));
             assert_eq!(own.properties, entry(&packet, owner).properties);
             assert_eq!(own.name.as_deref(), Some("JustPlayer"));
-            let other = entry(&filtered, 3 - owner);
+            let other = entry(&filtered, shared::public_id(3 - owner));
             assert!(!has(other, "textures") && has(other, wire::ANONYMOUS));
         }
     }
     assert!(state.reveal(2, &cfg, 1000));
     shared::publish(&state, &cfg);
     let revealed = wire::masked(&packet, false, 1).unwrap();
-    assert_eq!(entry(&revealed, 2), entry(&packet, 2));
+    let mut expected=entry(&packet,2).clone();expected.uuid=shared::public_id(2);
+    expected.properties[0].value=unknownmod_rules::textures::public_textures(&expected.properties[0].value).unwrap();
+    expected.properties[0].signature=None;
+    assert_eq!(entry(&revealed, expected.uuid), &expected);
     state.reveals.clear();
     shared::publish(&state, &cfg);
     let hidden = wire::masked(&packet, false, 1).unwrap();
-    assert!(!has(entry(&hidden, 2), "textures"));
+    assert!(!has(entry(&hidden, shared::public_id(2)), "textures"));
     let own = wire::masked(&packet, false, 2).unwrap();
     assert!(has(entry(&own, 2), "textures") && !has(entry(&own, 2), wire::ANONYMOUS));
     assert!(has(entry(&packet, 1), "textures") && has(entry(&packet, 2), "textures"));
@@ -60,8 +63,31 @@ fn main() {
     let C::ResetScore(reset)=wire::masked(&reset,false,2).unwrap()else{unreachable!()};assert_eq!(score.owner,reset.owner);
     let hidden_uuid=C::PlayerInfoUpdate(PlayerInfoUpdate{actions:1,entries:vec![entry(&packet,1).clone()]});
     let public=wire::masked(&hidden_uuid,false,2).unwrap();
-    assert_eq!(entry(&public,1).uuid,1); // Known limit: UUID is still the vanilla account/offline UUID.
+    let alias=shared::public_id(1);assert_ne!(alias,1);assert_eq!(entry(&public,alias).uuid,alias);
+    let remove=C::PlayerInfoRemove(horizon_protocol::packets::play::PlayerInfoRemove{uuids:vec![1,2]});
+    let C::PlayerInfoRemove(remove)=wire::masked(&remove,false,2).unwrap()else{unreachable!()};assert_eq!(remove.uuids,vec![alias,2]);
+    let add=C::AddEntity(horizon_protocol::packets::play::AddEntity{id:10,uuid:1,kind:0,position:[0.;3],velocity:[0.;3],pitch:0,yaw:0,head_yaw:0,data:0});
+    let C::AddEntity(add)=wire::masked(&add,false,2).unwrap()else{unreachable!()};assert_eq!(add.uuid,alias);
+    let raw=C::AddEntity(horizon_protocol::packets::play::AddEntity{id:10,uuid:1,kind:0,position:[0.;3],velocity:[0.;3],pitch:0,yaw:0,head_yaw:0,data:0});
+    let bytes=wire::encoded(raw.encode(),false,2).unwrap();let mut reader=horizon_protocol::buf::Reader::new(&bytes);let packet_id=reader.varint().unwrap();
+    let C::AddEntity(batched)=C::decode(packet_id,&bytes[reader.position()..]).unwrap()else{unreachable!()};assert_eq!(batched.uuid,alias);
+    assert!(wire::encoded(vec![packet_id as u8],false,2).is_none());
+    let update=C::PlayerInfoUpdate(PlayerInfoUpdate{actions:4,entries:vec![PlayerInfo{uuid:987654321,game_mode:Some(0),..Default::default()}]});
+    let update=wire::masked(&update,false,2).unwrap();assert_eq!(entry(&update,shared::public_id(987654321)).uuid,shared::public_id(987654321));
+    let metadata=C::SetEntityData(horizon_protocol::packets::play::SetEntityData{id:10,values:vec![(0,0,horizon_protocol::entity_data::Value::OptUuid(Some(1)))]});
+    let C::SetEntityData(metadata)=wire::masked(&metadata,false,2).unwrap()else{unreachable!()};assert_eq!(metadata.values[0].2,horizon_protocol::entity_data::Value::OptUuid(Some(alias)));
+    state.stop(2000);shared::publish(&state,&cfg);
+    let normal=wire::masked(&packet,false,2).unwrap();
+    assert_eq!(entry(&normal,alias).name.as_deref(),Some("Alice"));
+    assert!(has(entry(&normal,alias),"textures")&&!has(entry(&normal,alias),wire::ANONYMOUS));
+    assert_eq!(entry(&normal,2),entry(&packet,2));
+    state.start(&cfg,3000);shared::publish(&state,&cfg);
+    let resumed=wire::masked(&packet,false,2).unwrap();
+    assert_eq!(entry(&resumed,alias).name.as_deref(),Some("JustPlayer"));
+    assert!(has(entry(&resumed,alias),wire::ANONYMOUS));
+    assert!(!has(entry(&resumed,alias),"textures"));
+    println!("PASS: stop restores original skin URLs; owner signed skin preserved; start remasks with stable UUID");
     println!("PASS: own signed textures preserved; others masked; operator isolation; reveal/unreveal; shared packet unchanged");
     println!("PASS: literal chat, TAB header/footer, scoreboard owner/display and reset consistency");
-    println!("KNOWN LIMIT: public profile UUIDs are not pseudonymized yet");
+    println!("PASS: profile, entity, removal and metadata UUIDs agree; own UUID stays local");
 }

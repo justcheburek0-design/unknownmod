@@ -18,8 +18,19 @@ const timeout=setTimeout(()=>{console.error('Voice game proof timed out');finish
 function secret(name,data) {
   if(denyMode){console.error('FAIL: spectator received a voice secret');finish(1);return;}
   const bot=bots.get(name); if(bot.secret)return; bot.secret=data;
+  if(process.env.UNKNOWN_EXPECT_ALIASES==='1'){
+    const alias=data.subarray(20,36).toString('hex');
+    if(alias===bot.uuid){console.error('FAIL: voice handshake exposed real account UUID');finish(1);return;}
+    bot.alias=alias;
+    console.log(JSON.stringify({event:'voice_uuid_anonymous',player:name}));
+  }
   console.log(JSON.stringify({event:'voice_handshake_received',player:name}));
   if([...bots.values()].length!==(singleMode?1:2) || ![...bots.values()].every(b=>b.secret))return;
+  if(process.env.UNKNOWN_EXPECT_ALIASES==='1'&&!singleMode){
+    const a=bots.get('VoiceA'),b=bots.get('VoiceB');
+    if(!a.entityUuids.has(b.alias)||!b.entityUuids.has(a.alias)){console.error('FAIL: voice UUID does not match the remote Minecraft entity');finish(1);return;}
+    console.log('PASS voice identities match public Minecraft entity UUIDs');
+  }
   proof=cp.spawn(path.join(__dirname,'voice-proof/target/release/unknown-voice-proof.exe'),singleMode?[singleMode]:[],{stdio:['pipe','pipe','pipe']});
   proof.on('error',e=>{console.error(e.message);finish(1);});
   proof.stdout.pipe(process.stdout); proof.stderr.pipe(process.stderr);
@@ -28,7 +39,7 @@ function secret(name,data) {
 }
 function connect(name) {
   const uuid=crypto.createHash('md5').update('OfflinePlayer:'+name).digest();uuid[6]=(uuid[6]&15)|48;uuid[8]=(uuid[8]&63)|128;
-  const c={socket:net.createConnection({host:'127.0.0.1',port:gamePort}),state:'login',compression:null,buffer:Buffer.alloc(0)};bots.set(name,c);
+  const c={socket:net.createConnection({host:'127.0.0.1',port:gamePort}),state:'login',compression:null,buffer:Buffer.alloc(0),uuid:uuid.toString('hex'),entityUuids:new Set()};bots.set(name,c);
   c.send=(id,data=Buffer.alloc(0))=>{let p=Buffer.concat([vi(id),data]);if(c.compression!==null)p=p.length>=c.compression?Buffer.concat([vi(p.length),zlib.deflateSync(p)]):Buffer.concat([vi(0),p]);c.socket.write(Buffer.concat([vi(p.length),p]));};
   c.named=(type,data)=>{const id=ids[c.state].server.indexOf(type);if(id<0)throw Error(type);c.send(id,data);};
   c.socket.on('connect',()=>{const p=Buffer.alloc(2);p.writeUInt16BE(gamePort);c.send(0,Buffer.concat([vi(777),str('localhost'),p,vi(2)]));c.send(0,Buffer.concat([str(name),uuid]));});
@@ -48,6 +59,7 @@ function connect(name) {
         if(type==='CLIENTBOUND_SELECT_KNOWN_PACKS')c.named('SERVERBOUND_SELECT_KNOWN_PACKS',vi(0));
         if(type==='CLIENTBOUND_FINISH_CONFIGURATION'){c.named('SERVERBOUND_FINISH_CONFIGURATION');c.state='game';}
       }else{
+        if(type==='CLIENTBOUND_ADD_ENTITY'){const head=read(body);c.entityUuids.add(body.subarray(head[1],head[1]+16).toString('hex'));}
         if(type==='CLIENTBOUND_LOGIN'){
           console.log(JSON.stringify({event:'game_joined',player:name}));
           if(denyMode){
@@ -60,7 +72,7 @@ function connect(name) {
         }
         if(type==='CLIENTBOUND_KEEP_ALIVE')c.named('SERVERBOUND_KEEP_ALIVE',body);
         if(type==='CLIENTBOUND_GAME_EVENT'&&body[0]===3)c.mode=body.readFloatBE(1);
-        if(type==='CLIENTBOUND_PLAYER_POSITION'){const t=read(body);c.named('SERVERBOUND_ACCEPT_TELEPORTATION',Buffer.concat([vi(t[0]),body.subarray(t[1],t[1]+24),body.subarray(t[1]+48,t[1]+56)]));if(ids.game.server.includes('SERVERBOUND_PLAYER_LOADED'))c.named('SERVERBOUND_PLAYER_LOADED');}
+        if(type==='CLIENTBOUND_PLAYER_POSITION'){const t=read(body);c.named('SERVERBOUND_ACCEPT_TELEPORTATION',Buffer.concat([vi(t[0]),body.subarray(t[1],t[1]+24),body.subarray(t[1]+48,t[1]+56)]));if(ids.game.server.includes('SERVERBOUND_PLAYER_LOADED'))c.named('SERVERBOUND_PLAYER_LOADED');clearTimeout(c.movementTimer);c.movementTimer=setTimeout(()=>{if(!c.socket.destroyed)c.named('SERVERBOUND_MOVE_PLAYER_STATUS_ONLY',Buffer.from([1]))},100);}
         if(type==='CLIENTBOUND_CHUNK_BATCH_FINISHED'){const rate=Buffer.alloc(4);rate.writeFloatBE(8);c.named('SERVERBOUND_CHUNK_BATCH_RECEIVED',rate);}
         if(type==='CLIENTBOUND_CUSTOM_PAYLOAD'){
           let [channel,o]=stringAt(body,0);

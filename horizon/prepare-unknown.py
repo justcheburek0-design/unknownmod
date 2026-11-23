@@ -41,8 +41,28 @@ def main():
     for crate in ['horizon-client','horizon-client-lib']:
         patch(f'crates/{crate}/Cargo.toml', lambda t:replace(t,'[dependencies]',f'[dependencies]\nunknownmod_rules = {{ path = "{core}" }}'))
     patch('crates/horizon-client/src/client_lib.rs',lambda t:t+'\npub mod unknown_wire;\n')
-    patch('crates/horizon-client/src/game.rs',lambda t:t+'\nmod unknownmod;\n')
-    (SRC/'game/unknownmod.rs').write_text((ROOT/'horizon/unknown-game.rs').read_text(encoding='utf-8')+'\n'+(ROOT/'horizon/unknown-ui.rs').read_text(encoding='utf-8'),encoding='utf-8')
+    def game_modules(t):
+        start=t.index('pub(crate) mod voicechat_server {')
+        prefix,voice=t[:start],t[start:]
+        voice=replace(voice,'uuid: p.uuid,','uuid: unknownmod_rules::shared::public_id(p.uuid),')
+        voice=replace(voice,'name: "JustPlayer".to_owned(),','name: if unknownmod_rules::shared::hidden(p.uuid) { unknownmod_rules::shared::anonymous_name() } else { p.name },')
+        voice=replace(voice,'server.knows(player)','server.knows(unknownmod_rules::shared::public_id(player))')
+        voice=replace(voice,'server.message(player, channel, data);','server.message(unknownmod_rules::shared::public_id(player), channel, data);')
+        voice=replace(voice,'server.left(player);','server.left(unknownmod_rules::shared::public_id(player));')
+        voice=replace(voice,'for (player, channel, data) in out {','''for (player, channel, data) in out {
+            let player=if unknownmod_rules::shared::enabled(){
+                let Some(real)=unknownmod_rules::shared::real_id(player)else{continue};real
+            }else{player};''')
+        return prefix+voice+'\nmod unknownmod;\n'
+    patch('crates/horizon-client/src/game.rs',game_modules)
+    def spectator_alias(t):return replace(t,
+        'S::TeleportToEntity(p) if spectator => self.guest_spectate_teleport(host, gi, p.uuid),',
+        '''S::TeleportToEntity(p) if spectator => {
+                if unknownmod_rules::shared::enabled(){
+                    if let Some(real)=unknownmod_rules::shared::real_id(p.uuid){self.guest_spectate_teleport(host,gi,real);}
+                }else{self.guest_spectate_teleport(host,gi,p.uuid);}
+            },''')
+    (SRC/'game/unknownmod.rs').write_text('\n'.join((ROOT/'horizon'/name).read_text(encoding='utf-8') for name in ['unknown-game.rs','unknown-ui.rs','unknown-events.rs']),encoding='utf-8')
     shutil.copyfile(ROOT/'horizon/unknown-wire.rs',SRC/'unknown_wire.rs')
     shutil.copyfile(ROOT/'src/main/resources/assets/unknownmod/textures/entity/player/anonymous.png',SRC/'game/unknown-anonymous.png')
     from PIL import Image
@@ -61,6 +81,20 @@ def main():
         for g in self.guests.iter().filter(|g| g.placed) {'''))
     hub=SRC/'lan/hub.rs'
     t=hub.read_text(encoding='utf-8')
+    if t.count('g.sender.send_many(out.drain(..));')!=2:raise RuntimeError('Pinned entity batch paths changed')
+    t=t.replace('g.sender.send_many(out.drain(..));','g.sender.send_many(out.drain(..).filter_map(|body|crate::unknown_wire::encoded(body,g.permission>=2,g.uuid)));')
+    t=replace(t,'            if acted {', '''            let unknown_activity = match &packet {
+                S::MovePlayerRot(p) => p.yaw.is_finite() && p.pitch.is_finite()
+                    && (p.yaw != self.guests[i].yaw || p.pitch != self.guests[i].pitch),
+                S::MovePlayerPosRot(p) => self.moved_far(i, [p.x, p.y, p.z])
+                    || (p.yaw.is_finite() && p.pitch.is_finite()
+                        && (p.yaw != self.guests[i].yaw || p.pitch != self.guests[i].pitch)),
+                S::PlayerInput(p) => self.guests[i].client_loaded() && p.flags != 0,
+                S::CustomPayload(_) => false,
+                _ => acted,
+            };
+            if unknown_activity { unknownmod_rules::shared::record_activity(self.guests[i].uuid); }
+            if acted {''')
     t=replace(t,'    pub fn player_display_name(&self, uuid: u128, name: &str) -> Tag {',
         '''    pub fn player_display_name(&self, uuid: u128, name: &str) -> Tag {
         if unknownmod_rules::shared::hidden(uuid) {return literal(&unknownmod_rules::shared::anonymous_name());}''')
@@ -94,7 +128,7 @@ def main():
             ('native_perform_console_command','self.unknownmod_command(4,command,ran);'),
             ('native_player_commands_sent','if unknownmod_rules::shared::enabled() { names.retain(|n| !matches!(n.as_str(),"msg"|"tell"|"w"|"me"|"teammsg"|"tm"|"list")); }'),
             ('native_render_name_tag','if kind=="minecraft:player" && unknownmod_rules::shared::masked_entity(entity_id) { *visible=false; }'),
-            ('native_player_command','if unknownmod_rules::shared::enabled() {\n            let root=command.split_whitespace().next().unwrap_or("");\n            if matches!(root,"msg"|"tell"|"w"|"me"|"teammsg"|"tm"|"list") { *canceled=true; replies.push(Text::literal("Общение в эксперименте — только голосом. Список участников: /players")); }\n        }'),
+            ('native_player_command','if unknownmod_rules::shared::running() {\n            let root=command.split_whitespace().next().unwrap_or("");\n            if matches!(root,"msg"|"tell"|"w"|"me"|"teammsg"|"tm"|"list") { *canceled=true; replies.push(Text::literal("Общение в эксперименте — только голосом. Список участников: /players")); }\n        }'),
         ]: t=hook(t,fn,body)
         return t
     patch('crates/horizon-client/src/game/native_hooks.rs',hooks)
@@ -129,7 +163,7 @@ struct Entry {'''))
         '        let here = host.hub.here(&host.hub.guests[gi]);\n        let g = &mut host.hub.guests[gi];',
         '        self.unknownmod_death(host,gi);\n        let here = host.hub.here(&host.hub.guests[gi]);\n        let g = &mut host.hub.guests[gi];'))
     actions=SRC/'game/lan_actions.rs'
-    actions.write_text(actions.read_text(encoding='utf-8').replace('    death_cause: Option<String>,','    pub(super) death_cause: Option<String>,'),encoding='utf-8')
+    actions.write_text(spectator_alias(actions.read_text(encoding='utf-8')).replace('    death_cause: Option<String>,','    pub(super) death_cause: Option<String>,'),encoding='utf-8')
     patch('crates/horizon-client/src/game/lan.rs',lambda t:replace(t,'                            host.hub.guests.push(*guest);',
         '                            host.hub.guests.push(*guest);\n                            self.unknownmod_leave(&mut host,at);'))
     # Preserve real names for operator command feedback; the wire filter hides
@@ -181,7 +215,7 @@ def hook_chat(t):
     # This free hook is in the networking library; enforce even with no typed mods.
     start=t.index('pub fn native_player_chat(')
     body=t.index(') {',start)+3
-    return t[:body]+'''\n    if unknownmod_rules::shared::enabled() { *cancel = true; return; }
+    return t[:body]+'''\n    if unknownmod_rules::shared::running() { *cancel = true; return; }
 '''+t[body:]
 
 if __name__=='__main__': main()

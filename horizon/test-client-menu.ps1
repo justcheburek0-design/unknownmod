@@ -1,3 +1,4 @@
+param([string]$SkinTarget = '')
 # Invisible QA client only. Never selects or opens the user's launcher profile.
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -31,6 +32,21 @@ try {
         Start-Sleep -Milliseconds 500
     }
     Invoke-Control @('wait-ready') | Out-Null
+    if ($SkinTarget) {
+        $server = Join-Path $build 'runtime/horizon-windows-x64/horizon-server.exe'
+        $directory = Join-Path $build 'unknown-test-server'
+        foreach ($command in @('tp MenuVisualQA 0 -60 0',"tp $SkinTarget 4 -60 0 90 0","unknown hide $SkinTarget")) { & $server cmd $command --dir $directory | Out-Null }
+        Start-Sleep -Seconds 1
+        Invoke-Control @('look-at','4.5','-58.5','0.5') | Out-Null
+        Start-Sleep -Seconds 2
+        Invoke-Control @('screenshot',(Join-Path $build 'alias-skin-hidden.png')) | Out-Null
+        & $server cmd "unknown reveal $SkinTarget 1" --dir $directory | Out-Null
+        Start-Sleep -Seconds 4
+        Invoke-Control @('screenshot',(Join-Path $build 'alias-skin-revealed.png')) | Out-Null
+        & $server cmd "unknown hide $SkinTarget" --dir $directory | Out-Null
+        Start-Sleep -Seconds 2
+        Invoke-Control @('screenshot',(Join-Path $build 'alias-skin-restored.png')) | Out-Null
+    }
     Invoke-Control @('key','u','tap') | Out-Null
     Start-Sleep -Seconds 2
     $public = Invoke-Control @('ui')

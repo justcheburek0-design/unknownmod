@@ -39,7 +39,7 @@ pub fn snapshot(state: &State, config: &Config, viewer: PlayerId, privileged: bo
     let player=state.players.get(&viewer);
     let (recent,inactive)=state.participant_groups(config,now);
     Snapshot {
-        status: if player.is_some_and(|p| p.ghost) {"Ты наблюдатель"} else if state.reveals.contains_key(&viewer) {"Твоя личность раскрыта"} else {"Твоя личность скрыта"}.into(),
+        status: if state.stopped {"Эксперимент остановлен. Обычные скины включены"} else if player.is_some_and(|p| p.ghost) {"Ты наблюдатель"} else if state.reveals.contains_key(&viewer) {"Твоя личность раскрыта"} else {"Твоя личность скрыта"}.into(),
         combat_seconds: state.remaining_combat_seconds(viewer,combat),
         reveal_seconds: state.reveals.get(&viewer).map_or(0,|r|r.remaining(now).div_ceil(1000)),
         last_decision: player.and_then(|p|p.last_decision.as_ref()).map(|d|d.explanation()),
