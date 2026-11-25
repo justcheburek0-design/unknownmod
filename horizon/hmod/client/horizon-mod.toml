@@ -1,0 +1,49 @@
+id = "unknownmod_client"
+name = "UnknownMod"
+version = "6.2.0"
+description = "Анонимность, статус, участники и меню оператора. Открыть: U."
+authors = ["justcheburek0-design"]
+api = "0.2"
+side = "client"
+capabilities = ["registries"]
+
+[native]
+game = "26.3"
+horizon = "f1bb66f353cf67f2aa4665293fc75c8d91186fc7"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+[[native.module]]
+id = "runtime"
+file = "crates/horizon-client/src/game/network/remote/mod.rs"
+name = "unknownmod_runtime"
+source = "src/runtime.rs"
+
+[[native.mixin]]
+id = "packet"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::apply_packet"
+helper = "src/packet.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }, { name = "packet", ty = "&horizon_protocol::packets::play::Clientbound", value = "&packet" }]
+
+[[native.mixin]]
+id = "skins"
+kind = "HEAD"
+target = "horizon_client::game::remote::skins::Game<'_>::update_remote_skins_body"
+helper = "src/skins.rs"
+cancellable = true
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "tick"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::client_tick_pre::Game<'_>::native_client_tick_pre"
+helper = "src/tick.rs"
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]
+
+[[native.mixin]]
+id = "settings"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings_refresh"
+helper = "src/settings.rs"
+cancellable = true
+bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }, { name = "i", ty = "usize", value = "i" }]
